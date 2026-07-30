@@ -2,6 +2,7 @@ type HeroTextOverlayProps = {
   visible: boolean
 }
 
+/** Optional marketing overlay — not used by the main stage handoff (add button only). */
 export function HeroTextOverlay({ visible }: HeroTextOverlayProps) {
   if (!visible) {
     return null

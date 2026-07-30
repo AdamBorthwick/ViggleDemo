@@ -52,11 +52,10 @@ export type ModelEntry = {
 
 /**
  * Order is the option order in the Model control, so index 0 is the default.
- * Capsules stays first: it always works, needs no download, and doubles as the
- * physics debug view.
+ * Only textured character assets — physics capsules are a debug overlay, not
+ * a selectable model.
  */
 export const MODELS: ModelEntry[] = [
-  { id: 'capsules', label: 'Capsules', url: null, defaultColor: 0xb7b7b7 },
   {
     id: 'buddy',
     label: 'Buddy',

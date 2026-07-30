@@ -17,7 +17,6 @@ export type BuddyCommands = {
   remove: (id: number) => void
 }
 
-/** Character models only (skip Capsules debug mesh). */
 const SPAWNABLE = MODELS.map((model, index) => ({ model, index })).filter(
   (entry) => Boolean(entry.model.url),
 )

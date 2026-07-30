@@ -265,6 +265,11 @@ export class VirtualBuddyScene {
   private bounds = { halfWidth: 2, halfDepth: 1.2, ceiling: 4 }
   /** Kept so pointer-up can read throw power outside the render call. */
   private lastParams: VirtualBuddyParams | null = null
+  /**
+   * After Reset scene the stage may stay empty until the user adds a buddy.
+   * Without this, syncBuddies would immediately re-seed a host character.
+   */
+  private allowEmptyStage = false
 
   private width = 1
   private height = 1
@@ -573,7 +578,7 @@ export class VirtualBuddyScene {
    * @param randomizeHue Stage + button: random costume hue (S/V preserved).
    */
   spawnBuddy(
-    modelIndex = Math.round(this.lastParams?.model ?? 1),
+    modelIndex = Math.round(this.lastParams?.model ?? 0),
     options: { randomizeHue?: boolean } = {},
   ): boolean {
     const params = this.lastParams
@@ -581,6 +586,7 @@ export class VirtualBuddyScene {
       return false
     }
 
+    this.allowEmptyStage = false
     const randomizeHue = Boolean(options.randomizeHue)
     const resolvedIndex = Math.max(0, Math.min(MODELS.length - 1, Math.round(modelIndex)))
     const entry = MODELS[resolvedIndex] ?? MODELS[Math.round(params.model)] ?? MODELS[0]
@@ -1044,8 +1050,19 @@ export class VirtualBuddyScene {
     this.composer.render()
   }
 
+  /** Rebuild host after a hard model change (legacy reset path). */
   reset(): void {
+    this.allowEmptyStage = false
     this.buildKey = ''
+    this.teardownBuddies()
+  }
+
+  /**
+   * Clear every buddy from the stage; slider / effect settings are untouched.
+   * Stage stays empty until the user adds a model again.
+   */
+  clearStage(): void {
+    this.allowEmptyStage = true
     this.teardownBuddies()
   }
 
@@ -2556,9 +2573,11 @@ export class VirtualBuddyScene {
       return
     }
 
-    // Nothing left on stage — put one back, so Respawn and a lowered cap both
-    // recover rather than leaving an empty scene.
+    // Empty stage: re-seed a host unless the user explicitly cleared the scene.
     if (this.buddies.length === 0) {
+      if (this.allowEmptyStage) {
+        return
+      }
       this.addBuddy(new THREE.Vector3(0, 0, 0), params, false)
       return
     }

@@ -6,7 +6,13 @@ type CheckboxControlProps = {
   onChange: (value: number) => void
 }
 
+/**
+ * Circular toggle styled like the rest of the panel (secondary surface +
+ * primary fill) — no native white checkbox chrome.
+ */
 export function CheckboxControl({ control, value, onChange }: CheckboxControlProps) {
+  const checked = value >= 0.5
+
   return (
     <label className="flex cursor-pointer items-start justify-between gap-4">
       <span>
@@ -17,12 +23,22 @@ export function CheckboxControl({ control, value, onChange }: CheckboxControlPro
           </span>
         ) : null}
       </span>
-      <input
-        type="checkbox"
-        checked={value >= 0.5}
-        onChange={(event) => onChange(event.target.checked ? 1 : 0)}
-        className="mt-0.5 size-4 shrink-0 cursor-pointer accent-primary"
-      />
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={checked}
+        aria-label={control.label}
+        onClick={() => onChange(checked ? 0 : 1)}
+        className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border transition-colors ${
+          checked
+            ? 'border-primary bg-primary'
+            : 'border-border bg-secondary hover:border-primary/50'
+        }`}
+      >
+        {checked ? (
+          <span aria-hidden className="size-1.5 rounded-full bg-primary-foreground" />
+        ) : null}
+      </button>
     </label>
   )
 }

@@ -126,7 +126,10 @@ export function ShaderCanvas({
   }, [viewRef])
 
   useEffect(() => {
-    sceneRef.current?.reset()
+    if (resetToken === 0) {
+      return
+    }
+    sceneRef.current?.clearStage()
   }, [resetToken])
 
   useEffect(() => {
@@ -190,12 +193,10 @@ export function ShaderCanvas({
         }`}
         aria-label="Virtual Buddy preview"
       />
-      {status !== 'ready' ? (
+      {status === 'error' ? (
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
           <p className="text-sm text-muted-foreground">
-            {status === 'error'
-              ? 'Physics engine failed to load — see console.'
-              : 'Starting physics…'}
+            Physics engine failed to load — see console.
           </p>
         </div>
       ) : null}

@@ -19,7 +19,7 @@ export const virtualBuddyPreset: PresetDefinition<VirtualBuddyParams> = {
     maxBuddies: 3,
     bodyScale: 1.1,
     weight: 1.5,
-    model: 1,
+    model: 0,
     motion: 1,
 
     gravity: 9.81,

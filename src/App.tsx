@@ -1,8 +1,11 @@
 import { useMemo, useRef, useState } from 'react'
 import { ControlPanel } from './components/ControlPanel'
-import { HeroTextOverlay } from './components/HeroTextOverlay'
 import type { BuddyCommands } from './components/ModelsSection'
 import { ShaderCanvas } from './components/ShaderCanvas'
+import {
+  buildExportCode,
+  exportFilename,
+} from './effects/virtual-buddy/exportScope'
 import { virtualBuddyPreset } from './effects/virtual-buddy/preset'
 import { MODELS } from './effects/virtual-buddy/models/registry'
 import type { BuddySnapshot } from './effects/virtual-buddy/VirtualBuddyScene'
@@ -13,7 +16,6 @@ import {
 } from './presets/types'
 import type { VirtualBuddyParams } from './effects/virtual-buddy/types'
 
-/** Character models only (skip Capsules debug option). */
 const SPAWNABLE_MODELS = MODELS.map((model, index) => ({ model, index })).filter(
   (entry) => Boolean(entry.model.url),
 )
@@ -63,13 +65,14 @@ export default function App() {
   const [values, setValues] = useState(() => valuesFromParams(defaults))
   const [resetToken, setResetToken] = useState(0)
   const [spawnToken, setSpawnToken] = useState(0)
-  const [spawnModel, setSpawnModel] = useState(1)
+  const [spawnModel, setSpawnModel] = useState(0)
   const [spawnRandomizeHue, setSpawnRandomizeHue] = useState(false)
   const [buddyCount, setBuddyCount] = useState(0)
   const [buddies, setBuddies] = useState<BuddySnapshot[]>([])
   const [buddyCommands, setBuddyCommands] = useState<BuddyCommands | null>(null)
   const [controlsOpen, setControlsOpen] = useState(true)
-  const [heroTextVisible, setHeroTextVisible] = useState(false)
+  const [exportScope, setExportScope] = useState(0)
+
   const params: VirtualBuddyParams = useMemo(
     () => paramsFromControls(virtualBuddyPreset, values),
     [values],
@@ -81,7 +84,8 @@ export default function App() {
     setValues((current) => ({ ...current, [key]: value }))
   }
 
-  const handleRespawn = () => {
+  /** Clear all models; keep slider / effect settings. */
+  const handleResetScene = () => {
     setResetToken((token) => token + 1)
   }
 
@@ -106,19 +110,18 @@ export default function App() {
   }
 
   const handleExport = () => {
-    const payload = {
-      version: 1,
-      preset: virtualBuddyPreset.id,
-      settings: params,
+    // Settings module for the matching headless repo (not the full codebase).
+    const code = buildExportCode({
+      scopeIndex: exportScope,
+      presetId: virtualBuddyPreset.id,
+      params,
       buddies,
-    }
-    const blob = new Blob([JSON.stringify(payload, null, 2)], {
-      type: 'application/json',
     })
+    const blob = new Blob([code], { type: 'text/typescript;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `${virtualBuddyPreset.id}-settings.json`
+    link.download = exportFilename(exportScope, virtualBuddyPreset.id)
     document.body.appendChild(link)
     link.click()
     link.remove()
@@ -133,12 +136,14 @@ export default function App() {
           values={values}
           onChange={handleChange}
           onExport={handleExport}
-          onRespawn={handleRespawn}
+          onResetScene={handleResetScene}
           onResetSliders={handleResetSliders}
           onClose={() => setControlsOpen(false)}
           buddies={buddies}
           buddyCommands={buddyCommands}
           onAddModel={handleAddBuddy}
+          exportScope={exportScope}
+          onExportScopeChange={setExportScope}
         />
       ) : null}
 
@@ -155,8 +160,6 @@ export default function App() {
           onBuddyCommands={setBuddyCommands}
         />
 
-        <HeroTextOverlay visible={heroTextVisible} />
-
         {!controlsOpen ? (
           <div className="absolute left-4 top-4 z-20">
             <button
@@ -169,25 +172,7 @@ export default function App() {
           </div>
         ) : null}
 
-        <div className="absolute right-4 top-4 z-20 flex flex-col gap-2">
-          <button
-            type="button"
-            onClick={() => setHeroTextVisible((visible) => !visible)}
-            className="inline-flex items-center gap-2 rounded-md border border-white/20 bg-black/50 px-3 py-2 text-sm text-foreground backdrop-blur-md transition-colors hover:bg-black/70"
-          >
-            {heroTextVisible ? (
-              <>
-                Hide hero text
-                <span aria-hidden="true" className="text-base leading-none">
-                  ×
-                </span>
-              </>
-            ) : (
-              'Show hero text'
-            )}
-          </button>
-        </div>
-
+        {/* Full-scene handoff UI surface: add button only (no hero overlay). */}
         <div className="absolute bottom-5 left-5 z-20">
           <button
             type="button"
