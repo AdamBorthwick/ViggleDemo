@@ -48,24 +48,6 @@ function safeChannelRatio(value: number, baseline: number): number {
   return value / baseline
 }
 
-function matchPart(
-  parts: CostumePartDef[],
-  meshName: string,
-  materialName: string,
-): CostumePartDef | null {
-  const label = `${meshName} ${materialName}`
-  for (const part of parts) {
-    try {
-      if (new RegExp(part.match, 'i').test(label)) {
-        return part
-      }
-    } catch {
-      // ignore bad patterns
-    }
-  }
-  return parts[0] ?? null
-}
-
 /**
  * Draws the actual character, driven by the ragdoll, with per-part costume tints.
  */
@@ -103,8 +85,19 @@ export class SkinnedView {
 
         const matName = cloned.name || material.name || ''
         const meshName = mesh.name || ''
-        const part = matchPart(this.parts, meshName, matName)
-        if (part && cloned.color) {
+        const label = `${meshName} ${matName}`
+        // A single mesh can feed multiple parts (e.g. ninja suit albedo + trim
+        // emissive on the same body material).
+        for (const part of this.parts) {
+          let matched = false
+          try {
+            matched = new RegExp(part.match, 'i').test(label)
+          } catch {
+            matched = false
+          }
+          if (!matched || !cloned.color) {
+            continue
+          }
           const list = this.partTargets.get(part.id) ?? []
           list.push({
             material: cloned,

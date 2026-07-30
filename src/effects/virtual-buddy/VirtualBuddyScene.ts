@@ -134,15 +134,23 @@ type AutoPhase =
 
 type TurnNextPhase = 'walk' | 'handshakeApproach' | 'gesture' | 'idle'
 
+export type BuddyPartSnapshot = {
+  id: string
+  label: string
+  color: number
+  defaultColor: number
+}
+
 /** Live snapshot for the Models panel — no scene handles leak into React. */
 export type BuddySnapshot = {
   id: number
   label: string
   modelIndex: number
   motionIndex: number
+  /** Primary chip colour (first costume part). */
   color: number
-  /** Costume-matched default for the colour control reset. */
   defaultColor: number
+  parts: BuddyPartSnapshot[]
 }
 
 type Buddy = {
@@ -152,10 +160,10 @@ type Buddy = {
   modelLabel: string
   /** Per-buddy motion choice (MOTIONS index). */
   motionIndex: number
-  /** Packed 0xRRGGBB tint applied to mesh / capsule materials. */
-  tint: number
-  /** Costume-matched default tint for this model instance. */
-  defaultTint: number
+  /** Packed 0xRRGGBB colours keyed by costume part id. */
+  partColors: Record<string, number>
+  /** Costume-matched defaults keyed by part id. */
+  partDefaults: Record<string, number>
   /** Owned capsule material so tint + dispose stay instance-local. */
   capsuleMaterial: THREE.MeshStandardMaterial
   ragdoll: Ragdoll
@@ -507,20 +515,34 @@ export class VirtualBuddyScene {
     this.notifyBuddiesChange()
   }
 
+  setBuddyPartColor(id: number, partId: string, color: number): void {
+    const buddy = this.buddies.find((candidate) => candidate.id === id)
+    if (!buddy || !(partId in buddy.partDefaults)) {
+      return
+    }
+    const packed = color >>> 0
+    if (buddy.partColors[partId] === packed) {
+      return
+    }
+    buddy.partColors[partId] = packed
+    // Primary part also drives the capsule debug colour / list chip.
+    const primaryId = Object.keys(buddy.partDefaults)[0]
+    if (partId === primaryId) {
+      buddy.capsuleMaterial.color.setHex(packed)
+      buddy.view.setTint(packed)
+    }
+    buddy.skin?.setPartTint(partId, packed)
+    this.notifyBuddiesChange()
+  }
+
+  /** @deprecated Prefer setBuddyPartColor — sets the primary costume part. */
   setBuddyColor(id: number, color: number): void {
     const buddy = this.buddies.find((candidate) => candidate.id === id)
     if (!buddy) {
       return
     }
-    const packed = color >>> 0
-    if (buddy.tint === packed) {
-      return
-    }
-    buddy.tint = packed
-    buddy.capsuleMaterial.color.setHex(packed)
-    buddy.view.setTint(packed)
-    buddy.skin?.setTint(packed)
-    this.notifyBuddiesChange()
+    const primaryId = Object.keys(buddy.partDefaults)[0] ?? 'color'
+    this.setBuddyPartColor(id, primaryId, color)
   }
 
   removeBuddyById(id: number): void {
@@ -534,13 +556,24 @@ export class VirtualBuddyScene {
   }
 
   private toSnapshot(buddy: Buddy): BuddySnapshot {
+    const parts = Object.keys(buddy.partDefaults).map((partId) => ({
+      id: partId,
+      label:
+        buddy.skin?.parts.find((part) => part.id === partId)?.label ??
+        MODELS[buddy.modelIndex]?.parts?.find((part) => part.id === partId)?.label ??
+        partId,
+      color: buddy.partColors[partId] ?? buddy.partDefaults[partId] ?? 0xffffff,
+      defaultColor: buddy.partDefaults[partId] ?? 0xffffff,
+    }))
+    const primary = parts[0]
     return {
       id: buddy.id,
       label: buddy.modelLabel,
       modelIndex: buddy.modelIndex,
       motionIndex: buddy.motionIndex,
-      color: buddy.tint,
-      defaultColor: buddy.defaultTint,
+      color: primary?.color ?? 0xffffff,
+      defaultColor: primary?.defaultColor ?? 0xffffff,
+      parts,
     }
   }
 
@@ -916,11 +949,31 @@ export class VirtualBuddyScene {
     })
 
     const modelEntry = MODELS[resolvedModelIndex] ?? MODELS[0]
-    const defaultTint =
-      (model?.defaultTint ?? modelEntry.defaultColor ?? 0xffffff) >>> 0
+    const partDefs =
+      model?.parts ??
+      modelEntry.parts ??
+      [
+        {
+          id: 'color',
+          label: 'Color',
+          match: '.',
+          channel: 'albedo' as const,
+          defaultColor: (modelEntry.defaultColor ?? 0xffffff) >>> 0,
+        },
+      ]
+    const partDefaults: Record<string, number> = {}
+    const partColors: Record<string, number> = {}
+    for (const part of partDefs) {
+      const hex = part.defaultColor >>> 0
+      partDefaults[part.id] = hex
+      partColors[part.id] = hex
+    }
+    const primaryTint =
+      partColors[partDefs[0]?.id ?? 'color'] ??
+      ((model?.defaultTint ?? modelEntry.defaultColor ?? 0xffffff) >>> 0)
+
     const capsuleMaterial = this.buddyMaterial.clone()
-    const tint = defaultTint
-    capsuleMaterial.color.setHex(tint)
+    capsuleMaterial.color.setHex(primaryTint)
     const view = new PrimitiveView(ragdoll, capsuleMaterial)
     this.scene.add(view.group)
 
@@ -941,7 +994,7 @@ export class VirtualBuddyScene {
       // Bones without a rigid body (fingers, shoulders, neck) read their
       // rotation from the clip rather than staying pinned to bind pose.
       skin.setAnimationSource(anim)
-      skin.setTint(tint)
+      skin.setPartColors(partColors)
       this.scene.add(skin.group)
     }
 
@@ -961,8 +1014,8 @@ export class VirtualBuddyScene {
       modelIndex: resolvedModelIndex,
       modelLabel: modelEntry.label,
       motionIndex: defaultMotion,
-      tint,
-      defaultTint,
+      partColors,
+      partDefaults,
       capsuleMaterial,
       ragdoll,
       bindPose,

@@ -75,7 +75,7 @@ export function ShaderCanvas({
     sceneRef.current = scene
     commandsHandler.current?.({
       setMotion: (id, motionIndex) => scene.setBuddyMotion(id, motionIndex),
-      setColor: (id, color) => scene.setBuddyColor(id, color),
+      setPartColor: (id, partId, color) => scene.setBuddyPartColor(id, partId, color),
       remove: (id) => scene.removeBuddyById(id),
     })
 

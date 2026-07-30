@@ -41,14 +41,14 @@ export function ControlSection({
         >
           ▼
         </span>
-        <span className="flex min-w-0 flex-1 items-center gap-2">
-          <span className="text-sm font-medium tracking-tight text-foreground">{title}</span>
-          {badge ? (
-            <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
-              {badge}
-            </span>
-          ) : null}
+        <span className="min-w-0 flex-1 text-sm font-medium tracking-tight text-foreground">
+          {title}
         </span>
+        {badge ? (
+          <span className="ml-auto shrink-0 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium tabular-nums tracking-wide text-primary">
+            {badge}
+          </span>
+        ) : null}
       </button>
 
       {open ? (

@@ -125,7 +125,7 @@ export function ControlPanel<TParams extends Record<string, number>>({
         <ControlSection
           title="Models"
           defaultOpen={false}
-          badge={buddies.length > 0 ? String(buddies.length) : undefined}
+          badge={String(buddies.length)}
         >
           <ModelsSection buddies={buddies} commands={buddyCommands} />
         </ControlSection>

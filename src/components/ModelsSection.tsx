@@ -8,7 +8,7 @@ import type { ColorControlDef, SelectControlDef } from '../presets/types'
 
 export type BuddyCommands = {
   setMotion: (id: number, motionIndex: number) => void
-  setColor: (id: number, color: number) => void
+  setPartColor: (id: number, partId: string, color: number) => void
   remove: (id: number) => void
 }
 
@@ -18,7 +18,8 @@ type ModelsSectionProps = {
 }
 
 /**
- * Per-instance buddy editor: open a row to retint, pick an animation, or remove.
+ * Per-instance buddy editor: open a row to retint costume parts, pick an
+ * animation, or remove the character.
  */
 export function ModelsSection({ buddies, commands }: ModelsSectionProps) {
   const [openId, setOpenId] = useState<number | null>(null)
@@ -80,14 +81,41 @@ export function ModelsSection({ buddies, commands }: ModelsSectionProps) {
                   value={buddy.motionIndex}
                   onChange={(value) => commands?.setMotion(buddy.id, value)}
                 />
-                <ColorControl
-                  control={{
-                    ...colorControlDef,
-                    defaultValue: buddy.defaultColor,
-                  }}
-                  value={buddy.color}
-                  onChange={(value) => commands?.setColor(buddy.id, value)}
-                />
+
+                {buddy.parts.length > 0 ? (
+                  <div className="space-y-3">
+                    <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                      Color
+                    </p>
+                    {buddy.parts.map((part) => (
+                      <ColorControl
+                        key={part.id}
+                        control={{
+                          kind: 'color',
+                          key: `buddy-${buddy.id}-${part.id}`,
+                          label: part.label,
+                          defaultValue: part.defaultColor,
+                        }}
+                        value={part.color}
+                        onChange={(value) =>
+                          commands?.setPartColor(buddy.id, part.id, value)
+                        }
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <ColorControl
+                    control={{
+                      ...colorControlDef,
+                      defaultValue: buddy.defaultColor,
+                    }}
+                    value={buddy.color}
+                    onChange={(value) =>
+                      commands?.setPartColor(buddy.id, 'color', value)
+                    }
+                  />
+                )}
+
                 <button
                   type="button"
                   onClick={() => {
