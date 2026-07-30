@@ -4,6 +4,10 @@ import type { Ragdoll, RagdollPart } from '../physics/ragdoll'
 import { segmentCenter, segmentsInHierarchyOrder } from '../rigs/types'
 import type { CostumePartDef, LoadedModel } from '../models/registry'
 import type { AnimationPoseSource } from '../pose/animationPose'
+import {
+  installCostumeTintShader,
+  type CostumeTintUniforms,
+} from './costumeTintShader'
 
 type Bound = {
   part: RagdollPart
@@ -20,14 +24,16 @@ type Passenger = {
 
 type TintTarget = {
   material: THREE.MeshStandardMaterial
-  /** Load-time albedo (includes brightness). */
   baseColor: THREE.Color
-  /** Load-time emissive colour. */
   baseEmissive: THREE.Color
   baseEmissiveIntensity: number
-  channel: 'albedo' | 'emissive'
+  channel: CostumePartDef['channel']
   defaultColor: number
   hasMap: boolean
+  /** Present when this material uses the skin/armour split shader. */
+  splitUniforms: CostumeTintUniforms | null
+  /** Helmet / full-mesh armour: no skin classification. */
+  forceArmorOnly: boolean
 }
 
 const _bodyPos = new THREE.Vector3()
@@ -50,6 +56,10 @@ function safeChannelRatio(value: number, baseline: number): number {
 
 /**
  * Draws the actual character, driven by the ragdoll, with per-part costume tints.
+ *
+ * For single-atlas Mixamo assets (Paladin body, Ninja), skin and armour share a
+ * texture — those materials use a shader that classifies flesh vs cloth/metal
+ * so the Models panel can recolour them independently.
  */
 export class SkinnedView {
   readonly group = new THREE.Group()
@@ -72,6 +82,10 @@ export class SkinnedView {
     this.group.scale.setScalar(scale)
     this.group.position.copy(model.offset).multiplyScalar(-scale)
 
+    const usesSkinSplit = this.parts.some(
+      (part) => part.channel === 'skin' || part.channel === 'armor',
+    )
+
     root.traverse((child) => {
       const mesh = child as THREE.Mesh
       if (!mesh.isMesh || !mesh.material) {
@@ -86,8 +100,16 @@ export class SkinnedView {
         const matName = cloned.name || material.name || ''
         const meshName = mesh.name || ''
         const label = `${meshName} ${matName}`
-        // A single mesh can feed multiple parts (e.g. ninja suit albedo + trim
-        // emissive on the same body material).
+        const isHelmet = /helmet/i.test(label)
+
+        let splitUniforms: CostumeTintUniforms | null = null
+        if (usesSkinSplit && cloned.map) {
+          splitUniforms = installCostumeTintShader(cloned)
+          splitUniforms.uUseSkinSplit.value = isHelmet ? 0 : 1
+          // material.color stays as brightness lift; region tints live in uniforms.
+          // Keep color near the load-time base so map detail is preserved.
+        }
+
         for (const part of this.parts) {
           let matched = false
           try {
@@ -98,6 +120,12 @@ export class SkinnedView {
           if (!matched || !cloned.color) {
             continue
           }
+
+          // Skin controls do not attach to pure-armour meshes (helmet).
+          if (part.channel === 'skin' && isHelmet) {
+            continue
+          }
+
           const list = this.partTargets.get(part.id) ?? []
           list.push({
             material: cloned,
@@ -107,6 +135,8 @@ export class SkinnedView {
             channel: part.channel,
             defaultColor: part.defaultColor >>> 0,
             hasMap: Boolean(cloned.map),
+            splitUniforms,
+            forceArmorOnly: isHelmet || part.channel === 'albedo',
           })
           this.partTargets.set(part.id, list)
         }
@@ -115,13 +145,17 @@ export class SkinnedView {
       mesh.material = Array.isArray(mesh.material) ? clonedList : clonedList[0]!
     })
 
-    // Ensure every declared part has at least the first costume material if
-    // matching failed (single-mesh ninja still gets suit + trim channels).
+    // Single-mesh fallback: bind every part to the first textured material.
     if (this.parts.length > 0 && this.partTargets.size === 0) {
       for (const material of this.ownedMaterials) {
         const std = material as THREE.MeshStandardMaterial
         if (!std.color) {
           continue
+        }
+        let splitUniforms: CostumeTintUniforms | null = null
+        if (usesSkinSplit && std.map) {
+          splitUniforms = installCostumeTintShader(std)
+          splitUniforms.uUseSkinSplit.value = 1
         }
         for (const part of this.parts) {
           const list = this.partTargets.get(part.id) ?? []
@@ -133,6 +167,8 @@ export class SkinnedView {
             channel: part.channel,
             defaultColor: part.defaultColor >>> 0,
             hasMap: Boolean(std.map),
+            splitUniforms,
+            forceArmorOnly: false,
           })
           this.partTargets.set(part.id, list)
         }
@@ -183,7 +219,6 @@ export class SkinnedView {
     this.anim = anim
   }
 
-  /** Applies every part colour from a map of partId → hex. */
   setPartColors(colors: Record<string, number>): void {
     for (const part of this.parts) {
       const hex = colors[part.id] ?? part.defaultColor
@@ -201,8 +236,8 @@ export class SkinnedView {
 
     for (const target of targets) {
       _default.setHex(target.defaultColor)
+
       if (target.channel === 'emissive') {
-        // At the part default, restore load-time emissive; otherwise scale it.
         if (packed === target.defaultColor) {
           target.material.emissive.copy(target.baseEmissive)
           target.material.emissiveIntensity = target.baseEmissiveIntensity
@@ -220,9 +255,26 @@ export class SkinnedView {
         continue
       }
 
-      // Albedo
+      // Skin / armour split path (textured Mixamo body).
+      if (target.splitUniforms && (target.channel === 'skin' || target.channel === 'armor')) {
+        const relative = new THREE.Color(
+          safeChannelRatio(_tint.r, _default.r),
+          safeChannelRatio(_tint.g, _default.g),
+          safeChannelRatio(_tint.b, _default.b),
+        )
+        // At the part default, relative is (1,1,1) — texture reads as authored.
+        if (target.channel === 'skin') {
+          target.splitUniforms.uSkinTint.value.copy(relative)
+        } else {
+          target.splitUniforms.uArmorTint.value.copy(relative)
+        }
+        // Keep material.color as the stage brightness lift only.
+        target.material.color.copy(target.baseColor)
+        continue
+      }
+
+      // Simple albedo path (Buddy solids, helmet as whole mesh, etc.)
       if (target.hasMap) {
-        // Textured costume: keep map fidelity at the default colour.
         if (packed === target.defaultColor) {
           target.material.color.copy(target.baseColor)
         } else {
@@ -233,17 +285,15 @@ export class SkinnedView {
           )
         }
       } else {
-        // Solid materials (Buddy body / joints): the colour IS the control.
         target.material.color.setHex(packed)
       }
     }
   }
 
-  /** Convenience: set every albedo part to one colour (capsule fallback path). */
   setTint(hex: number): void {
     const packed = hex >>> 0
     for (const part of this.parts) {
-      if (part.channel === 'albedo') {
+      if (part.channel === 'albedo' || part.channel === 'armor') {
         this.setPartTint(part.id, packed)
       }
     }

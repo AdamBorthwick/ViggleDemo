@@ -10,10 +10,11 @@ export type CostumePartDef = {
   /** Case-insensitive match against mesh or material names. */
   match: string
   /**
-   * `albedo` multiplies base colour / map.
-   * `emissive` multiplies emissive (trim on single-texture meshes).
+   * `albedo` — full mesh / solid colour.
+   * `armor` / `skin` — split a shared albedo map (Paladin body, Ninja).
+   * `emissive` — trim accents on single-texture meshes.
    */
-  channel: 'albedo' | 'emissive'
+  channel: 'albedo' | 'armor' | 'skin' | 'emissive'
   /** Packed 0xRRGGBB default for the Models panel and spawn. */
   defaultColor: number
 }
@@ -46,21 +47,22 @@ export const MODELS: ModelEntry[] = [
     id: 'buddy',
     label: 'Buddy',
     url: `${import.meta.env.BASE_URL}models/xbot.glb`,
-    defaultColor: 0x1a8fd0,
+    // Cool mint green — lighter than the original dark teal.
+    defaultColor: 0x7df0c4,
     parts: [
       {
         id: 'body',
         label: 'Body',
         match: 'surface|body|alpha_body',
         channel: 'albedo',
-        defaultColor: 0x1a8fd0,
+        defaultColor: 0x7df0c4,
       },
       {
         id: 'joints',
         label: 'Joints',
         match: 'joint',
         channel: 'albedo',
-        defaultColor: 0x27363a,
+        defaultColor: 0x3d5c52,
       },
     ],
   },
@@ -68,21 +70,22 @@ export const MODELS: ModelEntry[] = [
     id: 'buddy-f',
     label: 'Buddy F',
     url: `${import.meta.env.BASE_URL}models/xbotf.glb`,
-    defaultColor: 0xe8789a,
+    // Warmer lime green — distinct from Buddy's mint.
+    defaultColor: 0xb8ff38,
     parts: [
       {
         id: 'body',
         label: 'Body',
         match: 'surface|body|highlimbs|beta_high',
         channel: 'albedo',
-        defaultColor: 0xe8789a,
+        defaultColor: 0xb8ff38,
       },
       {
         id: 'joints',
         label: 'Joints',
         match: 'joint',
         channel: 'albedo',
-        defaultColor: 0x553028,
+        defaultColor: 0x4a5c28,
       },
     ],
   },
@@ -93,14 +96,21 @@ export const MODELS: ModelEntry[] = [
     brightness: 3.4,
     emissiveLift: 0.9,
     defaultColor: 0x2a2e36,
-    // Single body map: suit = albedo tint, trim = emissive accent.
+    // One body atlas: skin vs cloth via shader mask; trim via emissive.
     parts: [
       {
         id: 'suit',
         label: 'Suit',
         match: 'ch24|body|mesh',
-        channel: 'albedo',
+        channel: 'armor',
         defaultColor: 0x2a2e36,
+      },
+      {
+        id: 'skin',
+        label: 'Skin',
+        match: 'ch24|body|mesh',
+        channel: 'skin',
+        defaultColor: 0xe0b090,
       },
       {
         id: 'trim',
@@ -118,13 +128,21 @@ export const MODELS: ModelEntry[] = [
     brightness: 3.1,
     emissiveLift: 0.8,
     defaultColor: 0x6a7a8c,
+    // Body mesh: skin + armour in one map. Helmet is a separate mesh.
     parts: [
       {
         id: 'armor',
         label: 'Armor',
-        match: 'nordstrom(?!_helmet)|paladin_mat',
-        channel: 'albedo',
+        match: 'nordstrom|paladin_mat|paladin',
+        channel: 'armor',
         defaultColor: 0x6a7a8c,
+      },
+      {
+        id: 'skin',
+        label: 'Skin',
+        match: 'nordstrom(?!_helmet)|paladin_mat',
+        channel: 'skin',
+        defaultColor: 0xe8b89a,
       },
       {
         id: 'helmet',
