@@ -17,12 +17,14 @@ type ShaderCanvasProps = {
   resetToken: number
   /** Bumped to drop another buddy on stage (button-driven, not a canvas click). */
   spawnToken: number
-  /** Registry index chosen in the Add buddy submenu. */
+  /** Registry index for the next spawn (random character from the stage button). */
   spawnModel: number
+  /** Stage + button: apply a random costume hue on spawn. */
+  spawnRandomizeHue?: boolean
   viewRef: RefObject<HTMLDivElement | null>
   /** Fires when a hard pull tears the buddy out of its performance, and back. */
   onLimpChange?: (limp: boolean) => void
-  /** Current buddy count so the Add button can disable at the cap. */
+  /** Current buddy count for badges / stage chrome. */
   onBuddyCountChange?: (count: number) => void
   onBuddiesChange?: (buddies: BuddySnapshot[]) => void
   onBuddyCommands?: (commands: BuddyCommands | null) => void
@@ -33,6 +35,7 @@ export function ShaderCanvas({
   resetToken,
   spawnToken,
   spawnModel,
+  spawnRandomizeHue = false,
   viewRef,
   onLimpChange,
   onBuddyCountChange,
@@ -130,8 +133,10 @@ export function ShaderCanvas({
     if (spawnToken === 0) {
       return
     }
-    sceneRef.current?.spawnBuddy(spawnModel)
-  }, [spawnToken, spawnModel])
+    sceneRef.current?.spawnBuddy(spawnModel, {
+      randomizeHue: spawnRandomizeHue,
+    })
+  }, [spawnToken, spawnModel, spawnRandomizeHue])
 
   const toNdc = (event: ReactPointerEvent<HTMLCanvasElement>): [number, number] => {
     const rect = event.currentTarget.getBoundingClientRect()

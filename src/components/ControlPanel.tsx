@@ -4,6 +4,7 @@ import { ColorControl } from './ColorControl'
 import { ModelsSection, type BuddyCommands } from './ModelsSection'
 import { SelectControl } from './SelectControl'
 import { SliderControl } from './SliderControl'
+import { FILTER_OPTIONS } from '../effects/virtual-buddy/filters/FilterStack'
 import type { BuddySnapshot } from '../effects/virtual-buddy/VirtualBuddyScene'
 import {
   isControlVisible,
@@ -21,6 +22,7 @@ type ControlPanelProps<TParams extends Record<string, number>> = {
   onClose: () => void
   buddies: BuddySnapshot[]
   buddyCommands: BuddyCommands | null
+  onAddModel?: () => void
 }
 
 function renderControl(
@@ -98,36 +100,40 @@ export function ControlPanel<TParams extends Record<string, number>>({
   onClose,
   buddies,
   buddyCommands,
+  onAddModel,
 }: ControlPanelProps<TParams>) {
   return (
     <aside className="z-20 flex h-full w-[min(100%,340px)] shrink-0 flex-col overflow-hidden border-r border-border bg-card/95 backdrop-blur-md">
-      <div className="border-b border-border px-5 py-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Preset</p>
-            <h2 className="mt-1 text-lg font-medium tracking-tight text-foreground">
-              {preset.name}
-            </h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Hide controls"
-            className="rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
-            Hide
-          </button>
-        </div>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{preset.tagline}</p>
+      <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
+        <h2 className="text-lg font-medium tracking-tight text-foreground">
+          {preset.name}
+        </h2>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Hide controls"
+          className="inline-flex items-center gap-2 rounded-md border border-border bg-secondary px-3 py-2 text-sm text-foreground transition-colors hover:bg-accent"
+        >
+          Hide controls
+          <span aria-hidden="true" className="text-base leading-none">
+            ×
+          </span>
+        </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-5 py-2">
+      <div className="flex-1 overflow-y-auto">
         <ControlSection
           title="Models"
           defaultOpen={false}
           badge={String(buddies.length)}
         >
-          <ModelsSection buddies={buddies} commands={buddyCommands} />
+          <ModelsSection
+            buddies={buddies}
+            commands={buddyCommands}
+            onAddModel={onAddModel}
+            maxBuddies={Math.max(1, Math.round(values.maxBuddies ?? 3))}
+            onMaxBuddiesChange={(value) => onChange('maxBuddies', value)}
+          />
         </ControlSection>
 
         {preset.sections.map((section) => {
@@ -142,13 +148,18 @@ export function ControlPanel<TParams extends Record<string, number>>({
             return null
           }
 
+          const isEffects = section.id === 'effects'
+          const filterIndex = Math.round(values.filter ?? 0)
+          const filterLabel =
+            FILTER_OPTIONS[filterIndex] ?? FILTER_OPTIONS[0] ?? 'Off'
+
           return (
             <ControlSection
               key={section.id}
               title={section.title}
               description={section.description}
               defaultOpen={section.defaultOpen ?? false}
-              badge={section.badge}
+              badge={isEffects ? filterLabel : section.badge}
             >
               {controls.map((control) => renderControl(control, values, onChange))}
             </ControlSection>

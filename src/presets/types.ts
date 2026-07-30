@@ -222,18 +222,27 @@ export function paramsFromControls<TParams extends Record<string, number>>(
   preset: PresetDefinition<TParams>,
   values: Record<string, number>,
 ): TParams {
-  const next = { ...preset.defaults }
+  const next = { ...preset.defaults } as Record<string, number>
+  // Apply every known default key from the live values map so controls that live
+  // outside preset.sections (e.g. Max models in the Models panel) still stick.
+  for (const key of Object.keys(preset.defaults)) {
+    const value = values[key]
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      next[key] = value
+    }
+  }
   for (const section of preset.sections) {
     for (const control of section.controls) {
       if (control.kind === 'heading') {
         continue
       }
-      if (control.key in values) {
-        next[control.key as keyof TParams] = values[control.key] as TParams[keyof TParams]
+      const value = values[control.key]
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        next[control.key] = value
       }
     }
   }
-  return next
+  return next as TParams
 }
 
 export function valuesFromParams<TParams extends Record<string, number>>(

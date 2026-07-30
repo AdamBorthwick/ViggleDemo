@@ -6,8 +6,8 @@ import type { VirtualBuddyParams } from './types'
  * Designer-facing controls. Descriptions are sparse — only where the label is
  * not self-explanatory.
  *
- * Categories (all start closed): Effects, Character, Physics, Interaction, Scene.
- * C-tier knobs stay as fixed defaults only.
+ * Categories (all start closed): Effects, Physics, Interaction, Scene.
+ * Body scale / weight are fixed defaults (not user-facing).
  */
 export const virtualBuddyPreset: PresetDefinition<VirtualBuddyParams> = {
   id: 'virtual-buddy',
@@ -17,7 +17,7 @@ export const virtualBuddyPreset: PresetDefinition<VirtualBuddyParams> = {
 
   defaults: {
     maxBuddies: 3,
-    bodyScale: 1,
+    bodyScale: 1.1,
     weight: 1.5,
     model: 1,
     motion: 1,
@@ -36,12 +36,15 @@ export const virtualBuddyPreset: PresetDefinition<VirtualBuddyParams> = {
     cameraDistance: 4,
     cameraHeight: 1.46,
     playDepth: 1.2,
-    brightness: 1,
+    brightness: 1.35,
+    groundColor: 0x2a2a2a,
+    leftLightColor: 0x00e05a,
+    rimLightStrength: 1,
     showPhysicsBodies: 0,
 
     filter: 0,
     filterStrength: 1,
-    colorIntensity: 1,
+    colorIntensity: 0.92,
 
     gbPixelSize: 5,
     gbContrast: 1.25,
@@ -58,11 +61,11 @@ export const virtualBuddyPreset: PresetDefinition<VirtualBuddyParams> = {
     blPosterize: 4,
     blFillBoost: 0.45,
 
-    ps1Resolution: 240,
-    ps1Affine: 0.35,
-    ps1Jitter: 0.22,
-    ps1ColorDepth: 5,
-    ps1Dither: 0.72,
+    ps1Resolution: 256,
+    ps1Affine: 0.5,
+    ps1Jitter: 0.17,
+    ps1ColorDepth: 4,
+    ps1Dither: 0.71,
   },
 
   sections: [
@@ -95,7 +98,7 @@ export const virtualBuddyPreset: PresetDefinition<VirtualBuddyParams> = {
           min: 0,
           max: 2,
           step: 0.01,
-          defaultValue: 1,
+          defaultValue: 0.92,
           visibleWhen: { key: 'filter', notEquals: 0 },
         },
         {
@@ -197,17 +200,27 @@ export const virtualBuddyPreset: PresetDefinition<VirtualBuddyParams> = {
           min: 60,
           max: 320,
           step: 1,
-          defaultValue: 240,
+          defaultValue: 256,
           visibleWhen: { key: 'filter', equals: 3 },
         },
         {
           kind: 'slider',
-          key: 'ps1Affine',
-          label: 'Affine warp',
+          key: 'ps1Jitter',
+          label: 'Jitter',
           min: 0,
           max: 1,
           step: 0.01,
-          defaultValue: 0.35,
+          defaultValue: 0.17,
+          visibleWhen: { key: 'filter', equals: 3 },
+        },
+        {
+          kind: 'slider',
+          key: 'ps1ColorDepth',
+          label: 'Color depth',
+          min: 2,
+          max: 8,
+          step: 1,
+          defaultValue: 4,
           visibleWhen: { key: 'filter', equals: 3 },
         },
         {
@@ -217,42 +230,8 @@ export const virtualBuddyPreset: PresetDefinition<VirtualBuddyParams> = {
           min: 0,
           max: 1,
           step: 0.01,
-          defaultValue: 0.72,
+          defaultValue: 0.71,
           visibleWhen: { key: 'filter', equals: 3 },
-        },
-      ],
-    },
-    {
-      id: 'character',
-      title: 'Character',
-      defaultOpen: false,
-      controls: [
-        {
-          kind: 'slider',
-          key: 'bodyScale',
-          label: 'Body scale',
-          min: 0.5,
-          max: 1.6,
-          step: 0.05,
-          defaultValue: 1,
-        },
-        {
-          kind: 'slider',
-          key: 'weight',
-          label: 'Weight',
-          min: 0.3,
-          max: 4,
-          step: 0.05,
-          defaultValue: 1.5,
-        },
-        {
-          kind: 'slider',
-          key: 'maxBuddies',
-          label: 'Max buddies',
-          min: 1,
-          max: 4,
-          step: 1,
-          defaultValue: 3,
         },
       ],
     },
@@ -328,6 +307,27 @@ export const virtualBuddyPreset: PresetDefinition<VirtualBuddyParams> = {
           label: 'Brightness',
           min: 0.3,
           max: 2.5,
+          step: 0.01,
+          defaultValue: 1.35,
+        },
+        {
+          kind: 'color',
+          key: 'groundColor',
+          label: 'Ground',
+          defaultValue: 0x2a2a2a,
+        },
+        {
+          kind: 'color',
+          key: 'leftLightColor',
+          label: 'Rim light',
+          defaultValue: 0x00e05a,
+        },
+        {
+          kind: 'slider',
+          key: 'rimLightStrength',
+          label: 'Rim strength',
+          min: 0,
+          max: 3,
           step: 0.01,
           defaultValue: 1,
         },

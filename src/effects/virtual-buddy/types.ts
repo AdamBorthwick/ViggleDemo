@@ -30,6 +30,12 @@ export type VirtualBuddyParams = {
   cameraHeight: number
   playDepth: number
   brightness: number
+  /** Packed 0xRRGGBB ground plane colour */
+  groundColor: number
+  /** Packed 0xRRGGBB colour for the rim directional light */
+  leftLightColor: number
+  /** Multiplier on base rim light intensity (1 = authored default). */
+  rimLightStrength: number
   showPhysicsBodies: number
 
   // Filters — shared

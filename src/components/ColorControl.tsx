@@ -92,11 +92,24 @@ export function ColorControl({ control, value, onChange }: ColorControlProps) {
     updatePlacement()
     const frame = window.requestAnimationFrame(updatePlacement)
     window.addEventListener('resize', updatePlacement)
-    window.addEventListener('scroll', updatePlacement, true)
+    // Capture-phase scroll: any panel/page scroll closes the picker so it
+    // does not float orphaned after the swatch leaves view. Ignore scrolls
+    // that originate inside the picker itself (hex field, etc.).
+    const onScroll = (event: Event) => {
+      const target = event.target
+      if (
+        target instanceof Node &&
+        panelRef.current?.contains(target)
+      ) {
+        return
+      }
+      setOpen(false)
+    }
+    window.addEventListener('scroll', onScroll, true)
     return () => {
       window.cancelAnimationFrame(frame)
       window.removeEventListener('resize', updatePlacement)
-      window.removeEventListener('scroll', updatePlacement, true)
+      window.removeEventListener('scroll', onScroll, true)
     }
   }, [open, updatePlacement])
 
@@ -227,16 +240,16 @@ export function ColorControl({ control, value, onChange }: ColorControlProps) {
 
   return (
     <div ref={rootRef} className="group space-y-1">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <span className="text-sm text-foreground">{control.label}</span>
+      <div className="flex items-baseline justify-between gap-2">
+        <div className="flex min-w-0 items-baseline gap-1.5">
+          <span className="text-sm leading-none text-foreground">{control.label}</span>
           {!isDefault ? (
             <button
               type="button"
               onClick={() => onChange(control.defaultValue >>> 0)}
               title={`Reset to ${hexToCss(control.defaultValue)}`}
               aria-label={`Reset ${control.label} to default`}
-              className="rounded px-1 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              className="rounded px-1 text-[10px] uppercase leading-none tracking-wide text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
               Reset
             </button>

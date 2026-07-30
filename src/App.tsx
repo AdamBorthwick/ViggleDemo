@@ -13,6 +13,50 @@ import {
 } from './presets/types'
 import type { VirtualBuddyParams } from './effects/virtual-buddy/types'
 
+/** Character models only (skip Capsules debug option). */
+const SPAWNABLE_MODELS = MODELS.map((model, index) => ({ model, index })).filter(
+  (entry) => Boolean(entry.model.url),
+)
+
+/**
+ * Strong anti-repeat pick for the stage + button.
+ * 1) Prefer types not on stage at all (uniform among missing).
+ * 2) Only once every type is present, allow duplicates — still heavily
+ *    weighted against whatever is already most common (1/(count+1)^5).
+ */
+function pickRandomModelIndex(presentModelIndices: number[]): number {
+  if (SPAWNABLE_MODELS.length === 0) {
+    return 1
+  }
+
+  const counts = new Map<number, number>()
+  for (const index of presentModelIndices) {
+    counts.set(index, (counts.get(index) ?? 0) + 1)
+  }
+
+  const missing = SPAWNABLE_MODELS.filter(({ index }) => (counts.get(index) ?? 0) === 0)
+  const pool = missing.length > 0 ? missing : SPAWNABLE_MODELS
+
+  if (missing.length > 0) {
+    const pick = pool[Math.floor(Math.random() * pool.length)]!
+    return pick.index
+  }
+
+  const weights = pool.map(({ index }) => {
+    const count = counts.get(index) ?? 0
+    return 1 / (count + 1) ** 5
+  })
+  const total = weights.reduce((sum, weight) => sum + weight, 0)
+  let roll = Math.random() * total
+  for (let i = 0; i < pool.length; i++) {
+    roll -= weights[i]!
+    if (roll <= 0) {
+      return pool[i]!.index
+    }
+  }
+  return pool[pool.length - 1]!.index
+}
+
 export default function App() {
   const viewRef = useRef<HTMLDivElement>(null)
   const defaults = useMemo(() => buildDefaultParams(virtualBuddyPreset), [])
@@ -20,7 +64,7 @@ export default function App() {
   const [resetToken, setResetToken] = useState(0)
   const [spawnToken, setSpawnToken] = useState(0)
   const [spawnModel, setSpawnModel] = useState(1)
-  const [addMenuOpen, setAddMenuOpen] = useState(false)
+  const [spawnRandomizeHue, setSpawnRandomizeHue] = useState(false)
   const [buddyCount, setBuddyCount] = useState(0)
   const [buddies, setBuddies] = useState<BuddySnapshot[]>([])
   const [buddyCommands, setBuddyCommands] = useState<BuddyCommands | null>(null)
@@ -32,7 +76,6 @@ export default function App() {
   )
 
   const maxBuddies = Math.max(1, Math.round(params.maxBuddies))
-  const canAddBuddy = buddyCount < maxBuddies
 
   const handleChange = (key: string, value: number) => {
     setValues((current) => ({ ...current, [key]: value }))
@@ -42,13 +85,20 @@ export default function App() {
     setResetToken((token) => token + 1)
   }
 
-  const handleAddBuddy = (modelIndex: number) => {
-    if (!canAddBuddy) {
-      return
-    }
-    setSpawnModel(modelIndex)
+  /**
+   * Spawn a character. Stage + button passes nothing → random model + hue.
+   * Models panel passes a chosen registry index (authored colours). At max
+   * capacity the oldest buddy is replaced.
+   */
+  const handleAddBuddy = (modelIndex?: number) => {
+    const fromStageButton = modelIndex === undefined
+    setSpawnModel(
+      fromStageButton
+        ? pickRandomModelIndex(buddies.map((buddy) => buddy.modelIndex))
+        : modelIndex,
+    )
+    setSpawnRandomizeHue(fromStageButton)
     setSpawnToken((token) => token + 1)
-    setAddMenuOpen(false)
   }
 
   const handleResetSliders = () => {
@@ -88,6 +138,7 @@ export default function App() {
           onClose={() => setControlsOpen(false)}
           buddies={buddies}
           buddyCommands={buddyCommands}
+          onAddModel={handleAddBuddy}
         />
       ) : null}
 
@@ -97,6 +148,7 @@ export default function App() {
           resetToken={resetToken}
           spawnToken={spawnToken}
           spawnModel={spawnModel}
+          spawnRandomizeHue={spawnRandomizeHue}
           viewRef={viewRef}
           onBuddyCountChange={setBuddyCount}
           onBuddiesChange={setBuddies}
@@ -121,40 +173,38 @@ export default function App() {
           <button
             type="button"
             onClick={() => setHeroTextVisible((visible) => !visible)}
-            className="rounded-md border border-white/20 bg-black/50 px-3 py-2 text-sm text-foreground backdrop-blur-md transition-colors hover:bg-black/70"
+            className="inline-flex items-center gap-2 rounded-md border border-white/20 bg-black/50 px-3 py-2 text-sm text-foreground backdrop-blur-md transition-colors hover:bg-black/70"
           >
-            {heroTextVisible ? 'Hide hero text' : 'Show hero text'}
+            {heroTextVisible ? (
+              <>
+                Hide hero text
+                <span aria-hidden="true" className="text-base leading-none">
+                  ×
+                </span>
+              </>
+            ) : (
+              'Show hero text'
+            )}
           </button>
         </div>
 
-        <div className="absolute bottom-4 left-4 z-20">
-          {addMenuOpen && canAddBuddy ? (
-            <div className="mb-2 min-w-44 overflow-hidden rounded-md border border-white/20 bg-black/75 p-1 text-sm text-foreground shadow-xl backdrop-blur-md">
-              {MODELS.map((model, index) =>
-                model.url ? (
-                  <button
-                    key={model.id}
-                    type="button"
-                    onClick={() => handleAddBuddy(index)}
-                    className="block w-full rounded px-3 py-2 text-left transition-colors hover:bg-white/15"
-                  >
-                    {model.label}
-                  </button>
-                ) : null,
-              )}
-            </div>
-          ) : null}
+        <div className="absolute bottom-5 left-5 z-20">
           <button
             type="button"
-            onClick={() => setAddMenuOpen((open) => !open)}
-            disabled={!canAddBuddy}
-            aria-expanded={addMenuOpen}
-            aria-haspopup="menu"
-            className="rounded-md border border-white/20 bg-black/55 px-4 py-2 text-sm text-foreground backdrop-blur-md transition-colors hover:bg-black/75 disabled:cursor-not-allowed disabled:opacity-40"
+            onClick={() => handleAddBuddy()}
+            aria-label="Add buddy"
+            title={
+              buddyCount >= maxBuddies
+                ? 'Stage full — oldest buddy will be replaced'
+                : 'Add a random buddy'
+            }
+            className="group flex h-14 w-14 origin-center items-center justify-center rounded-full border border-white/25 bg-primary text-primary-foreground shadow-[0_8px_28px_rgba(0,224,90,0.35)] outline-none transition-transform duration-200 ease-out animate-add-buddy-in hover:scale-105 active:scale-95 focus-visible:ring-2 focus-visible:ring-primary/80"
           >
-            Add buddy
-            <span className="ml-2 text-muted-foreground">
-              {buddyCount}/{maxBuddies}
+            <span
+              aria-hidden
+              className="flex h-8 w-8 items-center justify-center text-[2rem] font-light leading-none"
+            >
+              +
             </span>
           </button>
         </div>

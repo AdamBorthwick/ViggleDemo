@@ -18,7 +18,7 @@ function crossfadeDuration(previous: string, next: string): number {
     (previous.startsWith('Turn') && next === 'Walk') ||
     (previous === 'Walk' && next.startsWith('Turn'))
   ) {
-    return 0.55
+    return 0.65
   }
   if (previous.startsWith('Turn') || next.startsWith('Turn')) {
     return 0.4
@@ -37,6 +37,9 @@ function crossfadeDuration(previous: string, next: string): number {
   }
   if (previousMeta?.kind === 'gesture' || nextMeta?.kind === 'gesture') {
     return 0.7
+  }
+  if (previous === 'Walk' || next === 'Walk') {
+    return 0.65
   }
   if (
     previousMeta?.kind === 'locomotion' ||
@@ -227,6 +230,11 @@ export class AnimationPoseSource implements PoseSource {
     return duration > 1e-6 ? this.current.time / duration : 0
   }
 
+  /** Scales clip cadence without slowing mixer fades or transition timing. */
+  setPlaybackScale(scale: number): void {
+    this.current?.setEffectiveTimeScale(Math.max(0, scale))
+  }
+
   setNormalizedTime(t: number): void {
     if (!this.current) {
       return
@@ -272,6 +280,10 @@ export class AnimationPoseSource implements PoseSource {
 
     const meta = clipMeta(clip.name)
     const next = this.mixer.clipAction(clip)
+    // clipAction reuses cached AnimationActions, including their previous
+    // effective time scale. Every new performance starts neutral; locomotion
+    // applies its frame-by-frame cadence envelope after selection.
+    next.setEffectiveTimeScale(1)
     this.followFullRoot = Boolean(meta?.followRoot)
     if (meta?.once) {
       // Recovery / handshake are one-shot performances, not looping.

@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js'
 import { FilterStack } from './filters/FilterStack'
 import { initPhysics, PhysicsWorld } from './physics/createWorld'
 import { GrabController } from './physics/grab'
@@ -10,7 +11,9 @@ import { AnimationPoseSource } from './pose/animationPose'
 import { BindPoseSource } from './pose/bindPose'
 import { RaisedHandsPoseSource } from './pose/raisedHandsPose'
 import type { PoseSource } from './pose/types'
+import { applyRandomCostumeHue } from './costumeHue'
 import { clipMeta, loadModel, MODELS, MOTIONS, isRecoveryClip, pickRecoveryClip, type LoadedModel } from './models/registry'
+import { installCostumeTintShader } from './render/costumeTintShader'
 import { PrimitiveView } from './render/primitiveView'
 import { SkinnedView } from './render/skinnedView'
 import { primitiveRig } from './rigs/primitive'
@@ -80,11 +83,13 @@ const SPAWN_FORCE_FINISH_SECONDS = 2.6
 const SPAWN_RECOVERY_DELAY_MIN = 0.15
 const SPAWN_RECOVERY_DELAY_VARIANCE = 3.6
 /** Stage travel matched to the authored in-place stride. */
-const WALK_SPEED = 0.82
+const WALK_SPEED = 0.9
 /** Time for root travel to build after a turn finishes. */
-const WALK_ACCEL_SECONDS = 0.55
+const WALK_ACCEL_SECONDS = 0.7
 /** Distance over which a walker eases down before stopping to turn. */
-const WALK_DECEL_DISTANCE = 0.45
+const WALK_DECEL_DISTANCE = 0.55
+/** Cadence never reaches zero, so the crossfade keeps visibly progressing. */
+const WALK_MIN_PLAYBACK_SCALE = 0.42
 const TURN_RATE = 2.4
 const NAV_MARGIN = 0.4
 const HANDSHAKE_DISTANCE = 0.9
@@ -387,6 +392,148 @@ export class VirtualBuddyScene {
     }
     this.physics = new PhysicsWorld()
     this.grab = new GrabController(this.camera, this.physics)
+    // Fetch + GPU-warm textured models in the background so Ninja / Paladin
+    // do not hitch the first time they drop onto the stage.
+    void this.preloadSpawnableModels()
+  }
+
+  /**
+   * Loads every character GLB (sequentially, lightest first) and uploads maps
+   * / compiles materials off the critical spawn path.
+   */
+  private async preloadSpawnableModels(): Promise<void> {
+    const entries = MODELS.filter((entry) => entry.url).sort((a, b) => {
+      // Prefer smaller / default assets first so the host buddy is ready soon.
+      const order = (id: string) =>
+        id === 'buddy'
+          ? 0
+          : id === 'buddy-f'
+            ? 1
+            : id === 'paladin'
+              ? 2
+              : id === 'dancer'
+                ? 3
+                : 4
+      return order(a.id) - order(b.id)
+    })
+
+    for (const entry of entries) {
+      if (this.disposed || !entry.url) {
+        return
+      }
+      if (this.loadedModels.has(entry.url)) {
+        continue
+      }
+      try {
+        const model = await loadModel(entry.url)
+        if (this.disposed) {
+          return
+        }
+        this.loadedModels.set(entry.url, model)
+        this.warmLoadedModel(model)
+        // Yield so a 50MB+ parse does not starve the render loop.
+        await new Promise<void>((resolve) => {
+          window.setTimeout(resolve, 0)
+        })
+      } catch (error: unknown) {
+        console.warn(`[virtual-buddy] preload failed for ${entry.label}`, error)
+      }
+    }
+  }
+
+  /** Upload textures and compile character programs once per template. */
+  private warmLoadedModel(model: LoadedModel): void {
+    const textures = new Set<THREE.Texture>()
+    const collect = (material: THREE.Material | null | undefined) => {
+      if (!material) {
+        return
+      }
+      const std = material as THREE.MeshStandardMaterial
+      if (std.map) {
+        textures.add(std.map)
+      }
+      if (std.normalMap) {
+        textures.add(std.normalMap)
+      }
+      if (std.emissiveMap) {
+        textures.add(std.emissiveMap)
+      }
+      if (std.roughnessMap) {
+        textures.add(std.roughnessMap)
+      }
+      if (std.metalnessMap) {
+        textures.add(std.metalnessMap)
+      }
+      if (std.aoMap) {
+        textures.add(std.aoMap)
+      }
+      const physical = material as THREE.MeshPhysicalMaterial
+      if (physical.specularIntensityMap) {
+        textures.add(physical.specularIntensityMap)
+      }
+      if (physical.specularColorMap) {
+        textures.add(physical.specularColorMap)
+      }
+    }
+
+    model.scene.traverse((child) => {
+      const mesh = child as THREE.Mesh
+      if (!mesh.isMesh) {
+        return
+      }
+      const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+      for (const material of list) {
+        collect(material)
+      }
+    })
+
+    for (const texture of textures) {
+      this.renderer.initTexture(texture)
+    }
+
+    // Compile skinned + costume-tint programs so the first spawn is not the
+    // first shader compile (main hitch after the network load).
+    const usesSkinSplit = model.parts.some(
+      (part) =>
+        part.channel === 'skin' ||
+        part.channel === 'armor' ||
+        part.channel === 'trim',
+    )
+    const probe = cloneSkeleton(model.scene)
+    probe.traverse((child) => {
+      const mesh = child as THREE.Mesh
+      if (!mesh.isMesh || !mesh.material) {
+        return
+      }
+      const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+      const warmed = list.map((material) => {
+        const cloned = material.clone() as THREE.MeshStandardMaterial
+        if (usesSkinSplit && cloned.map) {
+          installCostumeTintShader(cloned)
+        }
+        return cloned
+      })
+      mesh.material = Array.isArray(mesh.material) ? warmed : warmed[0]!
+    })
+
+    const tempScene = new THREE.Scene()
+    tempScene.add(probe)
+    try {
+      this.renderer.compile(tempScene, this.camera)
+    } catch {
+      // Compile is best-effort — a failure here should not block spawning.
+    }
+    tempScene.remove(probe)
+    probe.traverse((child) => {
+      const mesh = child as THREE.Mesh
+      if (!mesh.isMesh) {
+        return
+      }
+      const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+      for (const material of list) {
+        material?.dispose()
+      }
+    })
   }
 
   /**
@@ -419,28 +566,34 @@ export class VirtualBuddyScene {
   }
 
   /**
-   * Adds another buddy on the stage floor, up to maxBuddies. Offset sideways
-   * so they do not stack on the same origin as the first.
+   * Adds another buddy on the stage floor. When at maxBuddies, the oldest is
+   * removed first so new arrivals always land. Offset sideways so they do not
+   * stack on the same origin as the first.
+   *
+   * @param randomizeHue Stage + button: random costume hue (S/V preserved).
    */
-  spawnBuddy(modelIndex = Math.round(this.lastParams?.model ?? 1)): boolean {
+  spawnBuddy(
+    modelIndex = Math.round(this.lastParams?.model ?? 1),
+    options: { randomizeHue?: boolean } = {},
+  ): boolean {
     const params = this.lastParams
     if (!params || !this.physics) {
       return false
     }
-    if (this.buddies.length >= Math.round(params.maxBuddies)) {
-      return false
-    }
 
+    const randomizeHue = Boolean(options.randomizeHue)
     const resolvedIndex = Math.max(0, Math.min(MODELS.length - 1, Math.round(modelIndex)))
     const entry = MODELS[resolvedIndex] ?? MODELS[Math.round(params.model)] ?? MODELS[0]
     if (!entry.url) {
-      this.spawnLoadedBuddy(null, resolvedIndex)
+      this.makeRoomForSpawn()
+      this.spawnLoadedBuddy(null, resolvedIndex, randomizeHue)
       return true
     }
 
     const loaded = this.loadedModels.get(entry.url)
     if (loaded) {
-      this.spawnLoadedBuddy(loaded, resolvedIndex)
+      this.makeRoomForSpawn()
+      this.spawnLoadedBuddy(loaded, resolvedIndex, randomizeHue)
       return true
     }
 
@@ -451,8 +604,12 @@ export class VirtualBuddyScene {
         if (this.disposed) {
           return
         }
-        this.loadedModels.set(entry.url as string, model)
-        this.spawnLoadedBuddy(model, resolvedIndex)
+        if (!this.loadedModels.has(entry.url as string)) {
+          this.loadedModels.set(entry.url as string, model)
+          this.warmLoadedModel(model)
+        }
+        this.makeRoomForSpawn()
+        this.spawnLoadedBuddy(model, resolvedIndex, randomizeHue)
       })
       .catch((error: unknown) => {
         console.error(`[virtual-buddy] failed to add ${entry.label}`, error)
@@ -460,14 +617,39 @@ export class VirtualBuddyScene {
     return true
   }
 
-  private spawnLoadedBuddy(model: LoadedModel | null, modelIndex = 1): void {
+  /** Drop oldest buddies until there is room under maxBuddies. */
+  private makeRoomForSpawn(): void {
     const params = this.lastParams
-    if (
-      !params ||
-      !this.physics ||
-      this.buddies.length >= Math.round(params.maxBuddies)
-    ) {
+    if (!params) {
       return
+    }
+    const max = Math.max(1, Math.round(params.maxBuddies))
+    let removed = false
+    while (this.buddies.length >= max) {
+      const oldest = this.buddies.shift()
+      if (!oldest) {
+        break
+      }
+      this.removeBuddy(oldest)
+      removed = true
+    }
+    if (removed) {
+      this.notifyBuddiesChange()
+    }
+  }
+
+  private spawnLoadedBuddy(
+    model: LoadedModel | null,
+    modelIndex = 1,
+    randomizeHue = false,
+  ): void {
+    const params = this.lastParams
+    if (!params || !this.physics) {
+      return
+    }
+    // Room should already be cleared; keep a hard cap as a safety net.
+    if (this.buddies.length >= Math.max(1, Math.round(params.maxBuddies))) {
+      this.makeRoomForSpawn()
     }
 
     const halfW = Math.max(0.2, this.bounds.halfWidth - 0.4)
@@ -487,6 +669,7 @@ export class VirtualBuddyScene {
       true,
       model,
       modelIndex,
+      randomizeHue,
     )
   }
 
@@ -662,6 +845,7 @@ export class VirtualBuddyScene {
     if (this.physics) {
       this.syncCamera(params)
       this.syncBrightness(params)
+      this.syncSceneLook(params)
       this.syncBounds(params)
       this.syncBuddies(params)
       this.syncMotion(Math.min(dt, 0.1))
@@ -895,9 +1079,20 @@ export class VirtualBuddyScene {
     // The filter pass also multiplies by the same gain (including Look = Off),
     // so palette-locked looks like Game Boy still respond to the control.
     const gain = Math.max(0, params.brightness)
+    const rimGain = Math.max(0, params.rimLightStrength ?? 1)
     this.hemiLight.intensity = this.baseHemiIntensity * gain
     this.keyLight.intensity = this.baseKeyIntensity * gain
-    this.rimLight.intensity = this.baseRimIntensity * gain
+    this.rimLight.intensity = this.baseRimIntensity * gain * rimGain
+  }
+
+  private syncSceneLook(params: VirtualBuddyParams): void {
+    const groundHex = (params.groundColor >>> 0) & 0xffffff
+    this.groundMaterial.color.setHex(groundHex)
+    // Bounce light from the hemi ground channel tracks the floor colour.
+    this.hemiLight.groundColor.setHex(groundHex)
+
+    const leftHex = (params.leftLightColor >>> 0) & 0xffffff
+    this.rimLight.color.setHex(leftHex)
   }
 
   private syncBounds(params: VirtualBuddyParams): void {
@@ -926,6 +1121,7 @@ export class VirtualBuddyScene {
     dropIn = true,
     model: LoadedModel | null = this.activeModel,
     modelIndex = Math.round(params.model),
+    randomizeHue = false,
   ): void {
     if (!this.physics) {
       return
@@ -967,6 +1163,9 @@ export class VirtualBuddyScene {
       const hex = part.defaultColor >>> 0
       partDefaults[part.id] = hex
       partColors[part.id] = hex
+    }
+    if (randomizeHue) {
+      applyRandomCostumeHue(modelEntry.id, partDefs, partColors)
     }
     const primaryTint =
       partColors[partDefs[0]?.id ?? 'color'] ??
@@ -1639,16 +1838,23 @@ export class VirtualBuddyScene {
     // Ease the stage anchor down before the destination, allowing the final
     // planted foot to absorb the walk before an authored turn takes over.
     const deceleration = THREE.MathUtils.lerp(
-      0.28,
+      0.18,
       1,
       THREE.MathUtils.smoothstep(distance, 0.08, WALK_DECEL_DISTANCE),
+    )
+    const motionGain = acceleration * deceleration
+    buddy.anim?.setPlaybackScale(
+      THREE.MathUtils.lerp(
+        WALK_MIN_PLAYBACK_SCALE,
+        1,
+        motionGain,
+      ),
     )
     const step = Math.min(
       distance,
       WALK_SPEED *
         buddy.animationRate *
-        acceleration *
-        deceleration *
+        motionGain *
         dt,
     )
     _navDelta.normalize().multiplyScalar(step)

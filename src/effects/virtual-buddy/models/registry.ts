@@ -11,10 +11,10 @@ export type CostumePartDef = {
   match: string
   /**
    * `albedo` — full mesh / solid colour.
-   * `armor` / `skin` — split a shared albedo map (Paladin body, Ninja).
-   * `emissive` — trim accents on single-texture meshes.
+   * `armor` / `skin` / `trim` — split a shared albedo map (Paladin, Ninja).
+   * `emissive` — glow accents on single-texture meshes.
    */
-  channel: 'albedo' | 'armor' | 'skin' | 'emissive'
+  channel: 'albedo' | 'armor' | 'skin' | 'trim' | 'emissive'
   /** Packed 0xRRGGBB default for the Models panel and spawn. */
   defaultColor: number
 }
@@ -29,11 +29,25 @@ export type ModelEntry = {
   /** Adds the albedo map back as soft unshadowed fill for realistic assets. */
   emissiveLift?: number
   /**
+   * Multiplier on KHR / physical specular intensity (1 = authored, 0.8 = −20%).
+   */
+  specularScale?: number
+  /**
    * Primary costume colour (0xRRGGBB) — chip colour and fallback default tint.
    */
   defaultColor?: number
   /** Per-region colour controls for the Models panel. */
   parts?: CostumePartDef[]
+  /**
+   * Clip name that should replace the standard "Dance" performance for this
+   * character (e.g. a unique choreography packaged as `dance2`).
+   */
+  preferredDanceClip?: string
+  /**
+   * Clip names whose hips X/Z travel should be frozen so the body stays planted
+   * while the limbs still play the authored motion.
+   */
+  pinRootClips?: string[]
 }
 
 /**
@@ -47,22 +61,22 @@ export const MODELS: ModelEntry[] = [
     id: 'buddy',
     label: 'Buddy',
     url: `${import.meta.env.BASE_URL}models/xbot.glb`,
-    // Cool mint green — lighter than the original dark teal.
-    defaultColor: 0x7df0c4,
+    // Brief brand green #00E05A, slightly desaturated (cool mid tone).
+    defaultColor: 0x2db86a,
     parts: [
       {
         id: 'body',
         label: 'Body',
-        match: 'surface|body|alpha_body',
+        match: 'surface|body|alpha_body|alpha_surface',
         channel: 'albedo',
-        defaultColor: 0x7df0c4,
+        defaultColor: 0x2db86a,
       },
       {
         id: 'joints',
         label: 'Joints',
         match: 'joint',
         channel: 'albedo',
-        defaultColor: 0x3d5c52,
+        defaultColor: 0x1a4d32,
       },
     ],
   },
@@ -70,22 +84,22 @@ export const MODELS: ModelEntry[] = [
     id: 'buddy-f',
     label: 'Buddy F',
     url: `${import.meta.env.BASE_URL}models/xbotf.glb`,
-    // Warmer lime green — distinct from Buddy's mint.
-    defaultColor: 0xb8ff38,
+    // Same hue family as #00E05A, lighter / softer saturation for contrast.
+    defaultColor: 0x5fd489,
     parts: [
       {
         id: 'body',
         label: 'Body',
-        match: 'surface|body|highlimbs|beta_high',
+        match: 'surface|body|highlimbs|beta_high|beta_surface',
         channel: 'albedo',
-        defaultColor: 0xb8ff38,
+        defaultColor: 0x5fd489,
       },
       {
         id: 'joints',
         label: 'Joints',
         match: 'joint',
         channel: 'albedo',
-        defaultColor: 0x4a5c28,
+        defaultColor: 0x2a5c3e,
       },
     ],
   },
@@ -95,8 +109,9 @@ export const MODELS: ModelEntry[] = [
     url: `${import.meta.env.BASE_URL}models/ninja.glb`,
     brightness: 3.4,
     emissiveLift: 0.9,
+    specularScale: 0.8,
     defaultColor: 0x2a2e36,
-    // One body atlas: skin vs cloth via shader mask; trim via emissive.
+    // One body atlas: skin vs cloth via shader mask.
     parts: [
       {
         id: 'suit',
@@ -112,13 +127,6 @@ export const MODELS: ModelEntry[] = [
         channel: 'skin',
         defaultColor: 0xe0b090,
       },
-      {
-        id: 'trim',
-        label: 'Trim',
-        match: 'ch24|body|mesh',
-        channel: 'emissive',
-        defaultColor: 0xc4a35a,
-      },
     ],
   },
   {
@@ -128,28 +136,35 @@ export const MODELS: ModelEntry[] = [
     brightness: 3.1,
     emissiveLift: 0.8,
     defaultColor: 0x6a7a8c,
-    // Body mesh: skin + armour in one map. Helmet is a separate mesh.
+    // Authored costume only — no per-region recolour controls.
+  },
+  {
+    id: 'dancer',
+    label: 'Dancer',
+    url: `${import.meta.env.BASE_URL}models/dancer.glb`,
+    brightness: 2.8,
+    emissiveLift: 0.7,
+    specularScale: 0.8,
+    defaultColor: 0xd6944d,
+    // Unique choreography is exported as `dance2`; promote it to Dance and
+    // freeze hips travel so she does not walk forward while performing.
+    preferredDanceClip: 'dance2',
+    pinRootClips: ['dance2', 'Dance'],
+    // Body atlas: yellow shirt vs flesh via costume yellow mask (shirt id).
     parts: [
       {
-        id: 'armor',
-        label: 'Armor',
-        match: 'nordstrom|paladin_mat|paladin',
+        id: 'shirt',
+        label: 'Shirt',
+        match: 'ch02_body|body|cloth',
         channel: 'armor',
-        defaultColor: 0x6a7a8c,
+        defaultColor: 0xd6944d,
       },
       {
         id: 'skin',
         label: 'Skin',
-        match: 'nordstrom(?!_helmet)|paladin_mat',
+        match: 'ch02_body|body',
         channel: 'skin',
         defaultColor: 0xe8b89a,
-      },
-      {
-        id: 'helmet',
-        label: 'Helmet',
-        match: 'helmet',
-        channel: 'albedo',
-        defaultColor: 0x8a9aac,
       },
     ],
   },
@@ -341,6 +356,79 @@ function stripTurnRootMotion(source: THREE.AnimationClip): THREE.AnimationClip {
 }
 
 /**
+ * Freezes hips X/Z at the first frame so a clip that walks forward still plays
+ * in place. Keeps Y bob and hips rotation so dance weight shifts still read.
+ */
+function stripLocomotionRootMotion(source: THREE.AnimationClip): THREE.AnimationClip {
+  const tracks = source.tracks.map((sourceTrack) => {
+    const track = sourceTrack.clone()
+    if (!track.name.includes('Hips') || !track.name.endsWith('.position')) {
+      return track
+    }
+    if (track.values.length < 3) {
+      return track
+    }
+    const x0 = track.values[0]!
+    const z0 = track.values[2]!
+    for (let i = 0; i < track.values.length; i += 3) {
+      track.values[i] = x0
+      track.values[i + 2] = z0
+    }
+    return track
+  })
+  return new THREE.AnimationClip(source.name, source.duration, tracks)
+}
+
+/**
+ * Model-specific clip wiring: preferred dance rename + in-place hips pin.
+ * Mutates the clips array in place.
+ */
+function applyModelClipOverrides(
+  clips: THREE.AnimationClip[],
+  modelEntry: ModelEntry | undefined,
+): void {
+  if (!modelEntry) {
+    return
+  }
+
+  const pinNames = new Set(modelEntry.pinRootClips ?? [])
+
+  if (modelEntry.preferredDanceClip) {
+    const preferredIndex = clips.findIndex(
+      (clip) => clip.name === modelEntry.preferredDanceClip,
+    )
+    if (preferredIndex >= 0) {
+      // Drop the generic Dance so MOTIONS / Auto always hit the unique clip.
+      for (let i = clips.length - 1; i >= 0; i -= 1) {
+        if (clips[i]!.name === 'Dance' && i !== preferredIndex) {
+          clips.splice(i, 1)
+        }
+      }
+      const preferred = clips.find((clip) => clip.name === modelEntry.preferredDanceClip)
+      if (preferred) {
+        if (pinNames.has(preferred.name) || pinNames.has('Dance')) {
+          const pinned = stripLocomotionRootMotion(preferred)
+          pinned.name = 'Dance'
+          const idx = clips.indexOf(preferred)
+          clips[idx] = pinned
+        } else {
+          preferred.name = 'Dance'
+        }
+        pinNames.delete(modelEntry.preferredDanceClip)
+      }
+    }
+  }
+
+  for (const name of pinNames) {
+    const index = clips.findIndex((clip) => clip.name === name)
+    if (index < 0) {
+      continue
+    }
+    clips[index] = stripLocomotionRootMotion(clips[index]!)
+  }
+}
+
+/**
  * Average RGB of a texture's image (downscaled). Returns null if the image is
  * not yet readable (CORS / not decoded).
  */
@@ -472,10 +560,13 @@ export function loadModel(url: string): Promise<LoadedModel> {
     // cool/blue body tint in material.color — force white so the figure reads
     // neutral under our lights (maps still multiply through white unchanged).
     const modelEntry = MODELS.find((entry) => entry.url === url)
+    applyModelClipOverrides(clips, modelEntry)
     const materialBrightness = modelEntry?.brightness ?? 1
     const emissiveLift = modelEntry?.emissiveLift ?? 0
+    const specularScale = modelEntry?.specularScale ?? 1
 
-    // Sample costume colour *before* brightness wipe, from the albedo map.
+    // Sample only as a fallback when the registry did not declare part colours
+    // (never overwrite explicit Buddy green / Ninja suit defaults).
     const sampledTint = resolveDefaultTint(gltf.scene, modelEntry?.defaultColor)
     const parts: CostumePartDef[] =
       modelEntry?.parts?.map((part) => ({ ...part })) ??
@@ -488,15 +579,7 @@ export function loadModel(url: string): Promise<LoadedModel> {
           defaultColor: sampledTint,
         },
       ]
-    // Prefer sampled map colour for the primary part when the registry left a
-    // placeholder dark default (textured assets).
-    if (modelEntry?.parts && sampledTint !== (modelEntry.defaultColor ?? 0xffffff)) {
-      const primary = parts[0]
-      if (primary && primary.channel === 'albedo') {
-        primary.defaultColor = sampledTint
-      }
-    }
-    const defaultTint = (parts[0]?.defaultColor ?? sampledTint) >>> 0
+    const defaultTint = (parts[0]?.defaultColor ?? modelEntry?.defaultColor ?? sampledTint) >>> 0
 
     gltf.scene.traverse((child) => {
       const mesh = child as THREE.Mesh
@@ -512,6 +595,41 @@ export function loadModel(url: string): Promise<LoadedModel> {
           continue
         }
         const colored = material as THREE.MeshStandardMaterial
+        const matLabel = `${mesh.name || ''} ${colored.name || material.name || ''}`
+        const isHairLike = /hair|eyelash/i.test(matLabel)
+
+        // Hair / lash cards are alpha atlases. Full BLEND often fails to draw
+        // useful coverage here — cutout + depth write is a solid demo fix.
+        if (isHairLike) {
+          colored.transparent = true
+          colored.alphaTest = 0.4
+          colored.depthWrite = true
+          colored.side = THREE.DoubleSide
+          mesh.renderOrder = 2
+          mesh.frustumCulled = false
+          // Slight lift without full emissiveMap wash on transparent cards.
+          if (colored.emissive) {
+            colored.emissive.setRGB(0.08, 0.08, 0.08)
+            colored.emissiveMap = null
+            colored.emissiveIntensity = 1
+          }
+          if (colored.color) {
+            // Keep hair near authored albedo (no stage brightness blowout).
+            colored.color.setRGB(1.15, 1.15, 1.15)
+          }
+          if (specularScale !== 1) {
+            const physical = colored as THREE.MeshPhysicalMaterial
+            if (typeof physical.specularIntensity === 'number') {
+              physical.specularIntensity *= specularScale
+            }
+            if (typeof colored.metalness === 'number') {
+              colored.metalness *= specularScale
+            }
+          }
+          material.needsUpdate = true
+          continue
+        }
+
         if (colored.color) {
           // Solid-colour assets (Buddy): bake the part default so spawn looks
           // correct before the first setPartTint. Textured assets stay white
@@ -545,6 +663,16 @@ export function loadModel(url: string): Promise<LoadedModel> {
         // Slightly glossier read helps plate / cloth catch key light.
         if (typeof colored.roughness === 'number') {
           colored.roughness = Math.min(colored.roughness, 0.72)
+        }
+        // Soften specular highlights (ninja / dancer default 0.8 = −20%).
+        if (specularScale !== 1) {
+          const physical = colored as THREE.MeshPhysicalMaterial
+          if (typeof physical.specularIntensity === 'number') {
+            physical.specularIntensity *= specularScale
+          }
+          if (typeof colored.metalness === 'number') {
+            colored.metalness *= specularScale
+          }
         }
         material.needsUpdate = true
       }

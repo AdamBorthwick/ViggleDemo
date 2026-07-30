@@ -30,16 +30,16 @@ export function SliderControl({ control, value, onChange }: SliderControlProps) 
 
   return (
     <div className="group block space-y-1.5">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <span className="text-sm text-foreground">{control.label}</span>
+      <div className="flex items-baseline justify-between gap-2">
+        <div className="flex min-w-0 items-baseline gap-1.5">
+          <span className="text-sm leading-none text-foreground">{control.label}</span>
           {!isDefault ? (
             <button
               type="button"
               onClick={() => onChange(control.defaultValue)}
               title={`Reset to ${formatValue(control.defaultValue, control.step)}`}
               aria-label={`Reset ${control.label} to default`}
-              className="rounded px-1 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              className="rounded px-1 text-[10px] uppercase leading-none tracking-wide text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
               Reset
             </button>

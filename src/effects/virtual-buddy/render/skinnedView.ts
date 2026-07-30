@@ -83,8 +83,13 @@ export class SkinnedView {
     this.group.position.copy(model.offset).multiplyScalar(-scale)
 
     const usesSkinSplit = this.parts.some(
-      (part) => part.channel === 'skin' || part.channel === 'armor',
+      (part) =>
+        part.channel === 'skin' || part.channel === 'armor' || part.channel === 'trim',
     )
+    const usesTrimSplit = this.parts.some((part) => part.channel === 'trim')
+    // Shirt id → yellow-cloth armour mask (dancer). Trim → metal plate mode.
+    const usesYellowShirt = this.parts.some((part) => part.id === 'shirt')
+    const armorMode = usesYellowShirt ? 2 : usesTrimSplit ? 1 : 0
 
     root.traverse((child) => {
       const mesh = child as THREE.Mesh
@@ -101,13 +106,26 @@ export class SkinnedView {
         const meshName = mesh.name || ''
         const label = `${meshName} ${matName}`
         const isHelmet = /helmet/i.test(label)
+        const isHair = /hair|eyelash/i.test(label)
+
+        // Hair cards ship as alpha-blend atlases; cutout + depth write keeps them
+        // visible in this stage lighting (full blend often sorts away to nothing).
+        if (isHair) {
+          cloned.transparent = true
+          cloned.alphaTest = 0.4
+          cloned.depthWrite = true
+          cloned.side = THREE.DoubleSide
+          mesh.renderOrder = 2
+          mesh.frustumCulled = false
+        }
 
         let splitUniforms: CostumeTintUniforms | null = null
-        if (usesSkinSplit && cloned.map) {
+        if (usesSkinSplit && cloned.map && !isHair) {
           splitUniforms = installCostumeTintShader(cloned)
           splitUniforms.uUseSkinSplit.value = isHelmet ? 0 : 1
+          splitUniforms.uUseTrimSplit.value = isHelmet || !usesTrimSplit ? 0 : 1
+          splitUniforms.uArmorMode.value = isHelmet ? 0 : armorMode
           // material.color stays as brightness lift; region tints live in uniforms.
-          // Keep color near the load-time base so map detail is preserved.
         }
 
         for (const part of this.parts) {
@@ -121,8 +139,8 @@ export class SkinnedView {
             continue
           }
 
-          // Skin controls do not attach to pure-armour meshes (helmet).
-          if (part.channel === 'skin' && isHelmet) {
+          // Skin / trim controls do not attach to pure-armour meshes (helmet).
+          if ((part.channel === 'skin' || part.channel === 'trim') && isHelmet) {
             continue
           }
 
@@ -156,6 +174,8 @@ export class SkinnedView {
         if (usesSkinSplit && std.map) {
           splitUniforms = installCostumeTintShader(std)
           splitUniforms.uUseSkinSplit.value = 1
+          splitUniforms.uUseTrimSplit.value = usesTrimSplit ? 1 : 0
+          splitUniforms.uArmorMode.value = armorMode
         }
         for (const part of this.parts) {
           const list = this.partTargets.get(part.id) ?? []
@@ -255,18 +275,25 @@ export class SkinnedView {
         continue
       }
 
-      // Skin / armour split path (textured Mixamo body).
-      if (target.splitUniforms && (target.channel === 'skin' || target.channel === 'armor')) {
-        const relative = new THREE.Color(
-          safeChannelRatio(_tint.r, _default.r),
-          safeChannelRatio(_tint.g, _default.g),
-          safeChannelRatio(_tint.b, _default.b),
-        )
-        // At the part default, relative is (1,1,1) — texture reads as authored.
+      // Skin / armour / trim split path (textured Mixamo body).
+      // Absolute multipliers: default → (1,1,1) so the map reads as authored;
+      // any other colour multiplies that region of the texture only.
+      if (
+        target.splitUniforms &&
+        (target.channel === 'skin' ||
+          target.channel === 'armor' ||
+          target.channel === 'trim')
+      ) {
+        const multiply = new THREE.Color(1, 1, 1)
+        if (packed !== target.defaultColor) {
+          multiply.setHex(packed)
+        }
         if (target.channel === 'skin') {
-          target.splitUniforms.uSkinTint.value.copy(relative)
+          target.splitUniforms.uSkinTint.value.copy(multiply)
+        } else if (target.channel === 'trim') {
+          target.splitUniforms.uTrimTint.value.copy(multiply)
         } else {
-          target.splitUniforms.uArmorTint.value.copy(relative)
+          target.splitUniforms.uArmorTint.value.copy(multiply)
         }
         // Keep material.color as the stage brightness lift only.
         target.material.color.copy(target.baseColor)

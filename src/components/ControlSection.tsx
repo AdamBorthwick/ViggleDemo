@@ -5,7 +5,7 @@ type ControlSectionProps = {
   description?: string
   /** Starts expanded. Defaults to true. */
   defaultOpen?: boolean
-  /** Optional badge on the header (e.g. active look name). */
+  /** Optional badge on the header (e.g. count or active look name). */
   badge?: string
   children: ReactNode
 }
@@ -13,6 +13,8 @@ type ControlSectionProps = {
 /**
  * Collapsible major category. Header is the only always-visible chrome so the
  * panel can carry many knobs without forcing a long scroll. Starts closed.
+ * When open, the title sticks while that section’s content scrolls.
+ * Borders span the full panel width; content keeps horizontal padding.
  */
 export function ControlSection({
   title,
@@ -31,7 +33,11 @@ export function ControlSection({
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-controls={panelId}
-        className="flex w-full items-center gap-2 py-3 text-left transition-colors hover:text-foreground"
+        className={`flex w-full items-center gap-2 px-5 py-3 text-left transition-colors hover:text-foreground ${
+          open
+            ? 'sticky top-0 z-10 border-b border-border/60 bg-card backdrop-blur-md'
+            : ''
+        }`}
       >
         <span
           aria-hidden
@@ -45,14 +51,14 @@ export function ControlSection({
           {title}
         </span>
         {badge ? (
-          <span className="ml-auto shrink-0 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium tabular-nums tracking-wide text-primary">
+          <span className="ml-auto shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-normal tabular-nums tracking-wide text-primary">
             {badge}
           </span>
         ) : null}
       </button>
 
       {open ? (
-        <div id={panelId} className="space-y-5 pb-5">
+        <div id={panelId} className="space-y-5 px-5 pb-5 pt-4">
           {description ? (
             <p className="text-xs leading-relaxed text-muted-foreground">{description}</p>
           ) : null}
