@@ -1,0 +1,295 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ============================================================================
+   VIGGLE — design tokens
+   ----------------------------------------------------------------------------
+   Neutrals, radii, spacing, type scale and motion are lifted verbatim from the
+   live Viggle studio app (computed styles). Color and type come from the brief,
+   which overrides what the product currently ships:
+
+     brand   #B8FF38 lime  ->  #00E05A  oklch(0.7905 0.2300 147.8)
+     type    Outfit        ->  Satoshi
+
+   The product lime is deliberately absent — no raw token, no utility, nothing
+   to accidentally reach for. Its values are recorded in HANDOFF.md only.
+   #00E05A is the single brand color, in both themes, everywhere.
+
+   Note: #00E05A sits at hue 147.8 / L 0.79 — all but identical to the token
+   already in their CSS (--colors-green-DEFAULT: oklch(79.2% .209 151.711)).
+   The brief's green reads as their green with the chroma pushed, not a rebrand.
+
+   Product ships dark-only (its `.light` block is defined but never applied).
+   `:root` holds light here to stay drop-in compatible with shadcn, but `.dark`
+   belongs on <html> as the default.
+   ========================================================================== */
+
+/* Drop Satoshi-Variable.woff2 into /public/fonts/ — fontshare.com/fonts/satoshi
+   Until then this 404s silently and falls through to the system stack. */
+@font-face {
+  font-family: "Satoshi";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 300 900;
+  src: url("/fonts/Satoshi-Variable.woff2") format("woff2-variations");
+}
+
+:root {
+  /* --- light ------------------------------------------------------------- */
+  --background: oklch(0.9851 0 0);           /* #FAFAFA  surface-100 light   */
+  --foreground: oklch(0.1777 0 0);           /* #111111  content-reserved    */
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.1777 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.1777 0 0);
+
+  --primary: oklch(0.7905 0.2300 147.8);     /* #00E05A  brand              */
+  --primary-foreground: oklch(0.1777 0 0);   /* #111111  green is too light
+                                                for white text at any size  */
+
+  --secondary: oklch(0.9341 0 0);            /* #E9E9E9  surface-200 light  */
+  --secondary-foreground: oklch(0.3172 0 0); /* #323232  content-500 light  */
+  --muted: oklch(0.9341 0 0);
+  --muted-foreground: oklch(0.5624 0 0);     /* #757575  content-300 light  */
+  --accent: oklch(0.9341 0 0);
+  --accent-foreground: oklch(0.1777 0 0);
+
+  --destructive: oklch(0.5091 0.2091 29.21); /* #C10000  negative-200       */
+  --destructive-foreground: oklch(1 0 0);
+
+  --border: oklch(0 0 0 / 0.2);              /* stroke-300 light @ .2       */
+  --input: oklch(0 0 0 / 0.28);              /* derived: inputs read hotter */
+  --ring: oklch(0.7905 0.2300 147.8);        /* focus ring carries brand    */
+
+  /* Triad anchored on the brand green: 147.8 / 267.8 / 27.8.
+     chart-2 and chart-4 are the cyan + amber already in their palette,
+     which land almost exactly midway between the triad points. */
+  --chart-1: oklch(0.7905 0.2300 147.8);     /* brand green                 */
+  --chart-2: oklch(0.7890 0.1540 211.53);    /* cyan-DEFAULT, theirs        */
+  --chart-3: oklch(0.6200 0.2200 267.8);     /* triad: violet               */
+  --chart-4: oklch(0.8280 0.1890 84.429);    /* amber-400, theirs           */
+  --chart-5: oklch(0.6600 0.2200 27.8);      /* triad: red-orange           */
+
+  --sidebar: oklch(0.9341 0 0);
+  --sidebar-foreground: oklch(0.1777 0 0);
+  --sidebar-primary: oklch(0.7905 0.2300 147.8);
+  --sidebar-primary-foreground: oklch(0.1777 0 0);
+  --sidebar-accent: oklch(0.9851 0 0);
+  --sidebar-accent-foreground: oklch(0.1777 0 0);
+  --sidebar-border: oklch(0 0 0 / 0.2);
+  --sidebar-ring: oklch(0.7905 0.2300 147.8);
+
+  /* --- type -------------------------------------------------------------- */
+  --font-sans: "Satoshi", ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans",
+    sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
+    "Noto Color Emoji";
+  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+
+  /* --- radius ------------------------------------------------------------ */
+  /* Their ramp is non-linear (.25 / .5 / .75 / 1.5 / 2.125rem), so the usual
+     calc(--radius ± 4px) chain can't express it. Base is their md; the ramp is
+     mapped literally in @theme below. */
+  --radius: 0.75rem;
+
+  /* --- shadow ------------------------------------------------------------ */
+  /* Only shadow-xl existed in the dump; the rest is scaled from it at the same
+     10% black. Dark UI leans on surface steps over shadow, so these stay light. */
+  --shadow-x: 0;
+  --shadow-y: 1px;
+  --shadow-blur: 3px;
+  --shadow-spread: 0px;
+  --shadow-opacity: 0.1;
+  --shadow-color: oklch(0 0 0);
+  --shadow-2xs: 0 1px 2px 0px hsl(0 0% 0% / 0.05);
+  --shadow-xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
+  --shadow-sm: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 1px 2px -1px hsl(0 0% 0% / 0.10);
+  --shadow: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 1px 2px -1px hsl(0 0% 0% / 0.10);
+  --shadow-md: 0 4px 6px -1px hsl(0 0% 0% / 0.10), 0 2px 4px -2px hsl(0 0% 0% / 0.10);
+  --shadow-lg: 0 10px 15px -3px hsl(0 0% 0% / 0.10), 0 4px 6px -4px hsl(0 0% 0% / 0.10);
+  --shadow-xl: 0 20px 25px -5px hsl(0 0% 0% / 0.10), 0 8px 10px -6px hsl(0 0% 0% / 0.10);
+  --shadow-2xl: 0 25px 50px -12px hsl(0 0% 0% / 0.25);
+
+  /* --- misc -------------------------------------------------------------- */
+  --tracking-tight: -0.025em;
+  --tracking-normal: 0em;
+  --tracking-wide: 0.025em;
+  --spacing: 0.25rem;
+
+  /* Brand green, deepened for use as *text* on light surfaces. #00E05A at
+     L 0.79 is illegible as text on #E9E9E9 — this is the cut to reach for
+     whenever green needs to carry words rather than fill a shape. */
+  --brand-deep: oklch(0.3500 0.1000 147.8);
+
+  /* App chrome, verbatim */
+  --studio-header-height: 48px;
+  --site-header-height: 44px;
+  --studio-sidebar-width: 160px;
+  --backdrop-blur: 8px;
+  --z-layer-modal: 500;
+}
+
+.dark {
+  /* --- dark — the shipped theme ------------------------------------------ */
+  --background: oklch(0.1777 0 0);           /* #111111  surface-100        */
+  --foreground: oklch(0.9851 0 0);           /* #FAFAFA  content-reserved   */
+  --card: oklch(0.2478 0 0);                 /* #212121  surface-200        */
+  --card-foreground: oklch(0.9851 0 0);
+  --popover: oklch(0.3172 0 0);              /* #323232  gray-900, derived  */
+  --popover-foreground: oklch(0.9851 0 0);
+
+  --primary: oklch(0.7905 0.2300 147.8);     /* #00E05A — constant across
+                                                themes; brand shouldn't
+                                                shift with color scheme     */
+  --primary-foreground: oklch(0.1777 0 0);
+
+  --secondary: oklch(0.3172 0 0);            /* #323232  gray-900           */
+  --secondary-foreground: oklch(0.9851 0 0);
+  --muted: oklch(0.2478 0 0);                /* #212121                     */
+  --muted-foreground: oklch(0.6731 0 0);     /* #969696  content-300        */
+  --accent: oklch(0.3829 0 0);               /* #434343  gray-800           */
+  --accent-foreground: oklch(0.9851 0 0);
+
+  --destructive: oklch(0.6617 0.2249 25.86); /* #FF4242  red-100 — the
+                                                bright cut, for dark        */
+  --destructive-foreground: oklch(0.9851 0 0);
+
+  --border: oklch(1 0 0 / 0.2);              /* stroke-300 @ .2, verbatim   */
+  --input: oklch(1 0 0 / 0.28);
+  --ring: oklch(0.7905 0.2300 147.8);
+
+  --chart-1: oklch(0.7905 0.2300 147.8);
+  --chart-2: oklch(0.7890 0.1540 211.53);
+  --chart-3: oklch(0.6200 0.2200 267.8);
+  --chart-4: oklch(0.8280 0.1890 84.429);
+  --chart-5: oklch(0.6600 0.2200 27.8);
+
+  --sidebar: oklch(0.2478 0 0);
+  --sidebar-foreground: oklch(0.9851 0 0);
+  --sidebar-primary: oklch(0.7905 0.2300 147.8);
+  --sidebar-primary-foreground: oklch(0.1777 0 0);
+  --sidebar-accent: oklch(0.3172 0 0);
+  --sidebar-accent-foreground: oklch(0.9851 0 0);
+  --sidebar-border: oklch(1 0 0 / 0.2);
+  --sidebar-ring: oklch(0.7905 0.2300 147.8);
+
+  --brand-deep: oklch(0.3500 0.1000 147.8);
+
+  /* Dark keeps its own shadow cut — heavier, since it reads against #111 */
+  --shadow-2xs: 0 1px 2px 0px hsl(0 0% 0% / 0.20);
+  --shadow-xs: 0 1px 3px 0px hsl(0 0% 0% / 0.20);
+  --shadow-sm: 0 1px 3px 0px hsl(0 0% 0% / 0.30), 0 1px 2px -1px hsl(0 0% 0% / 0.30);
+  --shadow: 0 1px 3px 0px hsl(0 0% 0% / 0.30), 0 1px 2px -1px hsl(0 0% 0% / 0.30);
+  --shadow-md: 0 4px 6px -1px hsl(0 0% 0% / 0.30), 0 2px 4px -2px hsl(0 0% 0% / 0.30);
+  --shadow-lg: 0 10px 15px -3px hsl(0 0% 0% / 0.35), 0 4px 6px -4px hsl(0 0% 0% / 0.35);
+  --shadow-xl: 0 20px 25px -5px hsl(0 0% 0% / 0.40), 0 8px 10px -6px hsl(0 0% 0% / 0.40);
+  --shadow-2xl: 0 25px 50px -12px hsl(0 0% 0% / 0.55);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-brand-deep: var(--brand-deep);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-serif: var(--font-serif);
+
+  /* Viggle's scale, verbatim. `sm` really is .825rem, not .875 — kept. */
+  --text-xs: 0.75rem;      --text-xs--line-height: 1rem;
+  --text-sm: 0.825rem;     --text-sm--line-height: 1.25rem;
+  --text-base: 1rem;       --text-base--line-height: 1.5rem;
+  --text-lg: 1.125rem;     --text-lg--line-height: 1.75rem;
+  --text-xl: 1.25rem;      --text-xl--line-height: 2rem;
+  --text-2xl: 1.5rem;      --text-2xl--line-height: 2.25rem;
+  --text-3xl: 1.75rem;     --text-3xl--line-height: 2.5rem;
+  --text-4xl: 2rem;        --text-4xl--line-height: 2.75rem;
+  --text-5xl: 2.25rem;     --text-5xl--line-height: 3rem;
+  --text-6xl: 3rem;        --text-6xl--line-height: 3.75rem;
+
+  --tracking-tight: var(--tracking-tight);
+  --tracking-normal: var(--tracking-normal);
+  --tracking-wide: var(--tracking-wide);
+
+  /* Literal, not calc'd — see the radius note above. */
+  --radius-none: 0;
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1.5rem;
+  --radius-xl: 2.125rem;
+
+  --shadow-2xs: var(--shadow-2xs);
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow: var(--shadow);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-xl: var(--shadow-xl);
+  --shadow-2xl: var(--shadow-2xl);
+
+  /* Their easing set — one curve for almost everything, .15s default */
+  --ease-DEFAULT: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --default-transition-duration: 0.15s;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+  /* Scrollbars, verbatim from the studio */
+  html {
+    scrollbar-width: thin;
+    scrollbar-color: #444 transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}

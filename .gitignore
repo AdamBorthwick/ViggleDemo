@@ -1,0 +1,14 @@
+node_modules
+dist
+.tmp-frames
+.DS_Store
+.claude/
+effect-archive/
+HANDOFF.md
+CLAUDE_HANDOFF.md
+PHASE_*_HANDOFF.md
+PHASE_*_ENTRY.md
+*.tsbuildinfo
+public/models/buddy.glb
+src/three/
+src/presets/spacetime-bloom.ts

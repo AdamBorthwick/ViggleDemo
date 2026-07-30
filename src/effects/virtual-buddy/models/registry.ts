@@ -1,0 +1,573 @@
+import * as THREE from 'three'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { buildMixamoRig } from '../rigs/mixamo'
+import type { RigDefinition } from '../rigs/types'
+
+/** A recolourable region of a character (mesh group or material channel). */
+export type CostumePartDef = {
+  id: string
+  label: string
+  /** Case-insensitive match against mesh or material names. */
+  match: string
+  /**
+   * `albedo` multiplies base colour / map.
+   * `emissive` multiplies emissive (trim on single-texture meshes).
+   */
+  channel: 'albedo' | 'emissive'
+  /** Packed 0xRRGGBB default for the Models panel and spawn. */
+  defaultColor: number
+}
+
+export type ModelEntry = {
+  id: string
+  label: string
+  /** null renders the physics capsules directly — no asset needed. */
+  url: string | null
+  /** Linear material multiplier for assets authored darker than the stage. */
+  brightness?: number
+  /** Adds the albedo map back as soft unshadowed fill for realistic assets. */
+  emissiveLift?: number
+  /**
+   * Primary costume colour (0xRRGGBB) — chip colour and fallback default tint.
+   */
+  defaultColor?: number
+  /** Per-region colour controls for the Models panel. */
+  parts?: CostumePartDef[]
+}
+
+/**
+ * Order is the option order in the Model control, so index 0 is the default.
+ * Capsules stays first: it always works, needs no download, and doubles as the
+ * physics debug view.
+ */
+export const MODELS: ModelEntry[] = [
+  { id: 'capsules', label: 'Capsules', url: null, defaultColor: 0xb7b7b7 },
+  {
+    id: 'buddy',
+    label: 'Buddy',
+    url: `${import.meta.env.BASE_URL}models/xbot.glb`,
+    defaultColor: 0x1a8fd0,
+    parts: [
+      {
+        id: 'body',
+        label: 'Body',
+        match: 'surface|body|alpha_body',
+        channel: 'albedo',
+        defaultColor: 0x1a8fd0,
+      },
+      {
+        id: 'joints',
+        label: 'Joints',
+        match: 'joint',
+        channel: 'albedo',
+        defaultColor: 0x27363a,
+      },
+    ],
+  },
+  {
+    id: 'buddy-f',
+    label: 'Buddy F',
+    url: `${import.meta.env.BASE_URL}models/xbotf.glb`,
+    defaultColor: 0xe8789a,
+    parts: [
+      {
+        id: 'body',
+        label: 'Body',
+        match: 'surface|body|highlimbs|beta_high',
+        channel: 'albedo',
+        defaultColor: 0xe8789a,
+      },
+      {
+        id: 'joints',
+        label: 'Joints',
+        match: 'joint',
+        channel: 'albedo',
+        defaultColor: 0x553028,
+      },
+    ],
+  },
+  {
+    id: 'ninja',
+    label: 'Ninja',
+    url: `${import.meta.env.BASE_URL}models/ninja.glb`,
+    brightness: 3.4,
+    emissiveLift: 0.9,
+    defaultColor: 0x2a2e36,
+    // Single body map: suit = albedo tint, trim = emissive accent.
+    parts: [
+      {
+        id: 'suit',
+        label: 'Suit',
+        match: 'ch24|body|mesh',
+        channel: 'albedo',
+        defaultColor: 0x2a2e36,
+      },
+      {
+        id: 'trim',
+        label: 'Trim',
+        match: 'ch24|body|mesh',
+        channel: 'emissive',
+        defaultColor: 0xc4a35a,
+      },
+    ],
+  },
+  {
+    id: 'paladin',
+    label: 'Paladin',
+    url: `${import.meta.env.BASE_URL}models/paladin.glb`,
+    brightness: 3.1,
+    emissiveLift: 0.8,
+    defaultColor: 0x6a7a8c,
+    parts: [
+      {
+        id: 'armor',
+        label: 'Armor',
+        match: 'nordstrom(?!_helmet)|paladin_mat',
+        channel: 'albedo',
+        defaultColor: 0x6a7a8c,
+      },
+      {
+        id: 'helmet',
+        label: 'Helmet',
+        match: 'helmet',
+        channel: 'albedo',
+        defaultColor: 0x8a9aac,
+      },
+    ],
+  },
+]
+
+export type ClipKind = 'idle' | 'gesture' | 'recovery' | 'locomotion' | 'social'
+
+/**
+ * Behaviour attached to a named Mixamo clip.
+ *
+ * Scene logic keys off these flags rather than hard-coding clip names, so a
+ * second get-up or a new social clip only needs a line here.
+ */
+export type ClipMeta = {
+  name: string
+  kind: ClipKind
+  /** One-shot rather than looping. */
+  once?: boolean
+  /** Carry authored hips travel through space (lying → standing). */
+  followRoot?: boolean
+  /** Recovery from a knockdown / limp state. */
+  recovery?: boolean
+  /** Driven by Auto only — not offered as a manual Motion option. */
+  autoOnly?: boolean
+}
+
+export const CLIPS: ClipMeta[] = [
+  { name: 'Idle', kind: 'idle' },
+  { name: 'Dance', kind: 'gesture' },
+  { name: 'Wave', kind: 'gesture' },
+  {
+    name: 'Getting Up',
+    kind: 'recovery',
+    once: true,
+    followRoot: true,
+    recovery: true,
+  },
+  {
+    name: 'Get Up 2',
+    kind: 'recovery',
+    once: true,
+    followRoot: true,
+    recovery: true,
+  },
+  // Scene navigation advances the stage anchor; the clip itself stays in place.
+  { name: 'Walk', kind: 'locomotion', autoOnly: true },
+  { name: 'Turn45', kind: 'locomotion', once: true, autoOnly: true },
+  { name: 'Turn45Left', kind: 'locomotion', once: true, autoOnly: true },
+  { name: 'Turn90', kind: 'locomotion', once: true, autoOnly: true },
+  { name: 'Turn90Left', kind: 'locomotion', once: true, autoOnly: true },
+  { name: 'Shake Hands', kind: 'social', once: true, autoOnly: true },
+]
+
+const CLIP_BY_NAME = new Map(CLIPS.map((clip) => [clip.name, clip]))
+
+export function clipMeta(name: string | null | undefined): ClipMeta | undefined {
+  if (!name) {
+    return undefined
+  }
+  return CLIP_BY_NAME.get(name)
+}
+
+export function isRecoveryClip(name: string | null | undefined): boolean {
+  return Boolean(clipMeta(name)?.recovery)
+}
+
+export function recoveryClipNames(): string[] {
+  return CLIPS.filter((clip) => clip.recovery).map((clip) => clip.name)
+}
+
+/** Picks either get-up so a crowd does not all recover the same way. */
+export function pickRecoveryClip(): string {
+  const names = recoveryClipNames()
+  return names[Math.floor(Math.random() * names.length)] ?? 'Getting Up'
+}
+
+/**
+ * Motion options in control order. Index 0 is free ragdoll — no clip at all.
+ *
+ * Clips are matched by name against whatever the loaded model carries, so a
+ * character missing one leaves that option inert rather than breaking. The list
+ * is static because control options are declared in the preset at module load;
+ * adding a clip to the GLB means adding a line here.
+ */
+export type MotionEntry = {
+  label: string
+  clip: string | null
+  /** Chooses clips contextually and recovers after interaction. */
+  auto?: boolean
+}
+
+export const MOTIONS: MotionEntry[] = [
+  { label: 'Ragdoll', clip: null },
+  { label: 'Auto', clip: null, auto: true },
+  { label: 'Idle', clip: 'Idle' },
+  { label: 'Dance', clip: 'Dance' },
+  { label: 'Wave', clip: 'Wave' },
+  { label: 'Get up', clip: 'Getting Up' },
+  { label: 'Get up 2', clip: 'Get Up 2' },
+]
+
+export type LoadedModel = {
+  /** Template to clone per buddy — never added to the scene itself. */
+  scene: THREE.Group
+  rig: RigDefinition
+  /** Uniform scale that brings the model to 1.7m. */
+  normalisation: number
+  /** Model-space point moved to the world origin (floor, between the feet). */
+  offset: THREE.Vector3
+  clips: THREE.AnimationClip[]
+  /**
+   * Primary costume colour (0xRRGGBB) for list chips / fallbacks.
+   */
+  defaultTint: number
+  /** Costume regions exposed in the Models panel. */
+  parts: CostumePartDef[]
+}
+
+const cache = new Map<string, Promise<LoadedModel>>()
+
+/**
+ * Anything shorter than this is an export artefact rather than a real clip.
+ * Blender emits a near-zero-length bind/T-pose track alongside the real
+ * animations; filtering on duration rather than name survives a rename.
+ */
+const MIN_CLIP_SECONDS = 0.2
+
+/**
+ * Reflects a Mixamo clip across the character's X axis.
+ *
+ * Negating a quaternion does not mirror it (`q` and `-q` are the same
+ * rotation). A real reflection swaps Left/Right tracks, negates X translation,
+ * and conjugates rotations by the reflection matrix: (x,y,z,w) ->
+ * (x,-y,-z,w).
+ */
+function mirrorMixamoClip(source: THREE.AnimationClip, name: string): THREE.AnimationClip {
+  const tracks = source.tracks.map((sourceTrack) => {
+    const track = sourceTrack.clone()
+    track.name = track.name
+      .replace(/Left/g, '__MIRROR_SIDE__')
+      .replace(/Right/g, 'Left')
+      .replace(/__MIRROR_SIDE__/g, 'Right')
+
+    if (track.name.endsWith('.position')) {
+      for (let i = 0; i < track.values.length; i += 3) {
+        track.values[i] = -track.values[i]
+      }
+    } else if (track.name.endsWith('.quaternion')) {
+      for (let i = 0; i < track.values.length; i += 4) {
+        track.values[i + 1] = -track.values[i + 1]
+        track.values[i + 2] = -track.values[i + 2]
+      }
+    }
+    return track
+  })
+  return new THREE.AnimationClip(name, source.duration, tracks)
+}
+
+/** Keeps turn footwork but lets the scene own exact heading and stage position. */
+function stripTurnRootMotion(source: THREE.AnimationClip): THREE.AnimationClip {
+  const tracks = source.tracks.map((sourceTrack) => {
+    const track = sourceTrack.clone()
+    if (!track.name.includes('Hips')) {
+      return track
+    }
+
+    if (track.name.endsWith('.position') && track.values.length >= 3) {
+      const x = track.values[0]
+      const z = track.values[2]
+      for (let i = 0; i < track.values.length; i += 3) {
+        track.values[i] = x
+        track.values[i + 2] = z
+      }
+    } else if (track.name.endsWith('.quaternion') && track.values.length >= 4) {
+      const x = track.values[0]
+      const y = track.values[1]
+      const z = track.values[2]
+      const w = track.values[3]
+      for (let i = 0; i < track.values.length; i += 4) {
+        track.values[i] = x
+        track.values[i + 1] = y
+        track.values[i + 2] = z
+        track.values[i + 3] = w
+      }
+    }
+    return track
+  })
+  return new THREE.AnimationClip(source.name, source.duration, tracks)
+}
+
+/**
+ * Average RGB of a texture's image (downscaled). Returns null if the image is
+ * not yet readable (CORS / not decoded).
+ */
+function averageColorFromMap(map: THREE.Texture | null | undefined): number | null {
+  if (!map?.image) {
+    return null
+  }
+  const image = map.image as {
+    width?: number
+    height?: number
+    naturalWidth?: number
+    naturalHeight?: number
+  }
+  const srcW = image.naturalWidth ?? image.width ?? 0
+  const srcH = image.naturalHeight ?? image.height ?? 0
+  if (srcW < 2 || srcH < 2) {
+    return null
+  }
+
+  try {
+    const size = 24
+    const canvas = document.createElement('canvas')
+    canvas.width = size
+    canvas.height = size
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
+    if (!ctx) {
+      return null
+    }
+    ctx.drawImage(map.image as CanvasImageSource, 0, 0, size, size)
+    const { data } = ctx.getImageData(0, 0, size, size)
+
+    let r = 0
+    let g = 0
+    let b = 0
+    let n = 0
+    for (let i = 0; i < data.length; i += 4) {
+      const a = data[i + 3] ?? 0
+      if (a < 24) {
+        continue
+      }
+      // Skip near-black voids / shadows that pull the average too dark.
+      const pr = data[i] ?? 0
+      const pg = data[i + 1] ?? 0
+      const pb = data[i + 2] ?? 0
+      if (pr + pg + pb < 30) {
+        continue
+      }
+      r += pr
+      g += pg
+      b += pb
+      n += 1
+    }
+    if (n < 8) {
+      return null
+    }
+    const rr = Math.min(255, Math.round(r / n))
+    const gg = Math.min(255, Math.round(g / n))
+    const bb = Math.min(255, Math.round(b / n))
+    return ((rr << 16) | (gg << 8) | bb) >>> 0
+  } catch {
+    return null
+  }
+}
+
+/** Picks a costume-representative colour from the loaded scene. */
+function resolveDefaultTint(
+  scene: THREE.Object3D,
+  fallback: number | undefined,
+): number {
+  let sampled: number | null = null
+  scene.traverse((child) => {
+    if (sampled !== null) {
+      return
+    }
+    const mesh = child as THREE.Mesh
+    if (!mesh.isMesh) {
+      return
+    }
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+    for (const material of materials) {
+      const std = material as THREE.MeshStandardMaterial
+      if (!std) {
+        continue
+      }
+      const fromMap = averageColorFromMap(std.map)
+      if (fromMap !== null) {
+        sampled = fromMap
+        return
+      }
+      if (std.color && !std.map) {
+        sampled = std.color.getHex() >>> 0
+        return
+      }
+    }
+  })
+  if (sampled !== null) {
+    return sampled
+  }
+  return (fallback ?? 0xffffff) >>> 0
+}
+
+export function loadModel(url: string): Promise<LoadedModel> {
+  const existing = cache.get(url)
+  if (existing) {
+    return existing
+  }
+
+  const promise = new GLTFLoader().loadAsync(url).then((gltf) => {
+    const built = buildMixamoRig(gltf.scene)
+    if (!built) {
+      throw new Error(`"${url}" has no recognisable Mixamo skeleton`)
+    }
+
+    const clips = gltf.animations.filter((clip) => clip.duration >= MIN_CLIP_SECONDS)
+    for (const [rightName, leftName] of [
+      ['Turn45', 'Turn45Left'],
+      ['Turn90', 'Turn90Left'],
+    ] as const) {
+      const index = clips.findIndex((clip) => clip.name === rightName)
+      if (index >= 0) {
+        const right = stripTurnRootMotion(clips[index])
+        clips[index] = right
+        clips.push(mirrorMixamoClip(right, leftName))
+      }
+    }
+
+    // Shadows have to be opted into per mesh, and the template is what gets
+    // cloned, so doing it here covers every buddy. Mixamo exports often ship a
+    // cool/blue body tint in material.color — force white so the figure reads
+    // neutral under our lights (maps still multiply through white unchanged).
+    const modelEntry = MODELS.find((entry) => entry.url === url)
+    const materialBrightness = modelEntry?.brightness ?? 1
+    const emissiveLift = modelEntry?.emissiveLift ?? 0
+
+    // Sample costume colour *before* brightness wipe, from the albedo map.
+    const sampledTint = resolveDefaultTint(gltf.scene, modelEntry?.defaultColor)
+    const parts: CostumePartDef[] =
+      modelEntry?.parts?.map((part) => ({ ...part })) ??
+      [
+        {
+          id: 'color',
+          label: 'Color',
+          match: '.',
+          channel: 'albedo' as const,
+          defaultColor: sampledTint,
+        },
+      ]
+    // Prefer sampled map colour for the primary part when the registry left a
+    // placeholder dark default (textured assets).
+    if (modelEntry?.parts && sampledTint !== (modelEntry.defaultColor ?? 0xffffff)) {
+      const primary = parts[0]
+      if (primary && primary.channel === 'albedo') {
+        primary.defaultColor = sampledTint
+      }
+    }
+    const defaultTint = (parts[0]?.defaultColor ?? sampledTint) >>> 0
+
+    gltf.scene.traverse((child) => {
+      const mesh = child as THREE.Mesh
+      if (!mesh.isMesh) {
+        return
+      }
+      mesh.castShadow = true
+      mesh.receiveShadow = true
+
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+      for (const material of materials) {
+        if (!material) {
+          continue
+        }
+        const colored = material as THREE.MeshStandardMaterial
+        if (colored.color) {
+          // Solid-colour assets (Buddy): bake the part default so spawn looks
+          // correct before the first setPartTint. Textured assets stay white
+          // so the map supplies the costume detail.
+          if (!colored.map && modelEntry?.defaultColor !== undefined) {
+            const hex = modelEntry.defaultColor >>> 0
+            colored.color.setHex(hex)
+            if (materialBrightness !== 1) {
+              colored.color.multiplyScalar(materialBrightness)
+            }
+          } else {
+            colored.color.setRGB(
+              materialBrightness,
+              materialBrightness,
+              materialBrightness,
+            )
+          }
+        }
+        if (colored.emissive) {
+          if (emissiveLift > 0) {
+            // Soft self-illumination using the albedo so dark PBR maps still
+            // read on a studio-dark stage without flattening to grey.
+            colored.emissive.setRGB(1, 1, 1)
+            colored.emissiveMap = colored.map
+            colored.emissiveIntensity = emissiveLift
+          } else {
+            colored.emissive.set(0x000000)
+            colored.emissiveIntensity = 1
+          }
+        }
+        // Slightly glossier read helps plate / cloth catch key light.
+        if (typeof colored.roughness === 'number') {
+          colored.roughness = Math.min(colored.roughness, 0.72)
+        }
+        material.needsUpdate = true
+      }
+    })
+
+    // Apply per-part solid defaults to matching untextured materials (Buddy
+    // body vs joints) so the stage matches the menu before user edits.
+    if (modelEntry?.parts) {
+      gltf.scene.traverse((child) => {
+        const mesh = child as THREE.Mesh
+        if (!mesh.isMesh) {
+          return
+        }
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+        for (const material of materials) {
+          const std = material as THREE.MeshStandardMaterial
+          if (!std?.color || std.map) {
+            continue
+          }
+          const label = `${std.name || ''} ${mesh.name || ''}`
+          const part = modelEntry.parts!.find((entry) =>
+            new RegExp(entry.match, 'i').test(label),
+          )
+          if (part && part.channel === 'albedo') {
+            std.color.setHex(part.defaultColor >>> 0)
+          }
+        }
+      })
+    }
+
+    return {
+      scene: gltf.scene,
+      rig: built.rig,
+      normalisation: built.normalisation,
+      offset: built.offset,
+      clips,
+      defaultTint,
+      parts,
+    }
+  })
+
+  cache.set(url, promise)
+  return promise
+}
