@@ -25,14 +25,19 @@
    belongs on <html> as the default.
    ========================================================================== */
 
-/* Drop Satoshi-Variable.woff2 into /public/fonts/ — fontshare.com/fonts/satoshi
-   Until then this 404s silently and falls through to the system stack. */
+/* Satoshi — self-hosted (fontshare.com/fonts/satoshi, ITF Free Font License;
+   the licence ships at public/fonts/Satoshi-LICENSE.txt).
+
+   Kept under src/ rather than public/ so Vite fingerprints it and rewrites the
+   URL. The previous absolute "/fonts/..." resolved against the domain root,
+   which 404s on Pages where the site is served from /ViggleDemo/ — the build
+   uses `base: './'` precisely so nothing assumes it owns the root. */
 @font-face {
   font-family: "Satoshi";
   font-style: normal;
   font-display: swap;
   font-weight: 300 900;
-  src: url("/fonts/Satoshi-Variable.woff2") format("woff2-variations");
+  src: url("../assets/fonts/Satoshi-Variable.woff2") format("woff2-variations");
 }
 
 :root {

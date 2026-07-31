@@ -361,12 +361,12 @@ export class SkinnedView {
   }
 
   dispose(): void {
-    this.group.traverse((child) => {
-      const mesh = child as THREE.Mesh
-      if (mesh.isMesh) {
-        mesh.geometry?.dispose()
-      }
-    })
+    // Geometry is deliberately left alone. `SkeletonUtils.clone` copies the
+    // scene graph but shares buffers (`Mesh.copy` assigns `source.geometry` by
+    // reference), so the meshes here point at the cached template's geometry —
+    // the same instance every future buddy of this model will use. Disposing it
+    // drops the GPU buffers for the whole character and forces a full re-upload
+    // on the next frame that draws one. Only the cloned materials are ours.
     for (const material of this.ownedMaterials) {
       material.dispose()
     }

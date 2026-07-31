@@ -254,6 +254,8 @@ export class VirtualBuddyScene {
   private activeModel: LoadedModel | null = null
   private readonly loadedModels = new Map<string, LoadedModel>()
   private pendingModel: string | null = null
+  /** URLs whose load rejected, so one bad asset only disables itself. */
+  private readonly failedModels = new Set<string>()
   private modelError: string | null = null
   private lastTime = 0
 
@@ -382,6 +384,8 @@ export class VirtualBuddyScene {
       bounds: this.bounds,
       boundsKey: this.boundsKey,
       buildKey: this.buildKey,
+      modelError: this.modelError,
+      failedModels: [...this.failedModels],
     }
   }
 
@@ -2519,7 +2523,9 @@ export class VirtualBuddyScene {
     this.activeModel = null
     this.activeRig = primitiveRig
 
-    if (this.pendingModel === entry.url || this.modelError) {
+    // Failures are tracked per URL. A single shared flag meant one bad asset
+    // silently blocked every *other* model from ever loading again.
+    if (this.pendingModel === entry.url || this.failedModels.has(entry.url)) {
       return
     }
 
@@ -2535,6 +2541,7 @@ export class VirtualBuddyScene {
         this.buildKey = ''
       })
       .catch((error: unknown) => {
+        this.failedModels.add(entry.url as string)
         this.modelError = error instanceof Error ? error.message : String(error)
         console.error('[virtual-buddy] model load failed', error)
       })

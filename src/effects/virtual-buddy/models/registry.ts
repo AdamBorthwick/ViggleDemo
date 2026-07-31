@@ -713,6 +713,14 @@ export function loadModel(url: string): Promise<LoadedModel> {
     }
   })
 
+  // A rejected promise must not stay cached, or one dropped request makes the
+  // model permanently unloadable for the rest of the session.
+  promise.catch(() => {
+    if (cache.get(url) === promise) {
+      cache.delete(url)
+    }
+  })
+
   cache.set(url, promise)
   return promise
 }

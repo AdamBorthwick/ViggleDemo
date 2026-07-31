@@ -67,7 +67,6 @@ export default function App() {
   const [spawnToken, setSpawnToken] = useState(0)
   const [spawnModel, setSpawnModel] = useState(0)
   const [spawnRandomizeHue, setSpawnRandomizeHue] = useState(false)
-  const [buddyCount, setBuddyCount] = useState(0)
   const [buddies, setBuddies] = useState<BuddySnapshot[]>([])
   const [buddyCommands, setBuddyCommands] = useState<BuddyCommands | null>(null)
   const [controlsOpen, setControlsOpen] = useState(true)
@@ -77,8 +76,6 @@ export default function App() {
     () => paramsFromControls(virtualBuddyPreset, values),
     [values],
   )
-
-  const maxBuddies = Math.max(1, Math.round(params.maxBuddies))
 
   const handleChange = (key: string, value: number) => {
     setValues((current) => ({ ...current, [key]: value }))
@@ -155,7 +152,6 @@ export default function App() {
           spawnModel={spawnModel}
           spawnRandomizeHue={spawnRandomizeHue}
           viewRef={viewRef}
-          onBuddyCountChange={setBuddyCount}
           onBuddiesChange={setBuddies}
           onBuddyCommands={setBuddyCommands}
         />
@@ -178,11 +174,6 @@ export default function App() {
             type="button"
             onClick={() => handleAddBuddy()}
             aria-label="Add buddy"
-            title={
-              buddyCount >= maxBuddies
-                ? 'Stage full — oldest buddy will be replaced'
-                : 'Add a random buddy'
-            }
             className="group flex h-14 w-14 origin-center items-center justify-center rounded-full border border-white/25 bg-primary text-primary-foreground shadow-[0_8px_28px_rgba(0,224,90,0.35)] outline-none transition-transform duration-200 ease-out animate-add-buddy-in hover:scale-105 active:scale-95 focus-visible:ring-2 focus-visible:ring-primary/80"
           >
             <span
