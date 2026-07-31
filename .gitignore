@@ -4,10 +4,10 @@ dist
 .DS_Store
 .claude/
 effect-archive/
-HANDOFF.md
+HANDOFF-original-brief.md
 PHASE_*_HANDOFF.md
 PHASE_*_ENTRY.md
-# CLAUDE_HANDOFF.md is tracked — current agent source of truth
+# HANDOFF.md is tracked — current agent source of truth
 *.tsbuildinfo
 public/models/buddy.glb
 src/three/

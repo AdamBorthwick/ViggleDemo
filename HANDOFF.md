@@ -1,4 +1,4 @@
-# Claude Handoff — Virtual Buddy (current project)
+# Handoff — Virtual Buddy (current project)
 
 > **Status:** Authoring demo is live on GitHub. Headless consumer repos exist as **docs + settings stubs only** — real app shells are the next major task (full code review first, then import).  
 > **Date context:** 2026-07-30  
@@ -283,7 +283,7 @@ Footer:
 
 | File | Notes |
 |------|--------|
-| `CLAUDE_HANDOFF.md` | **This file** — current source of truth for agents |
+| `HANDOFF.md` | **This file** — current source of truth for agents |
 | `HANDOFF.md` | Older design-challenge brief (historical) |
 | `PHASE_6_HANDOFF.md` / `PHASE_7_FILTERS_ENTRY.md` | Earlier phase notes; may be stale |
 | `effect-archive/spacetime-bloom/` | Frozen previous effect |
