@@ -62,6 +62,7 @@ function pickRandomModelIndex(presentModelIndices: number[]): number {
 
 export default function App() {
   const viewRef = useRef<HTMLDivElement>(null)
+  const addButtonRef = useRef<HTMLButtonElement>(null)
   const defaults = useMemo(() => buildDefaultParams(virtualBuddyPreset), [])
   const [values, setValues] = useState(() => valuesFromParams(defaults))
   const [resetToken, setResetToken] = useState(0)
@@ -73,6 +74,7 @@ export default function App() {
   const [controlsOpen, setControlsOpen] = useState(true)
   const [exportScope, setExportScope] = useState(0)
   const [heroTextVisible, setHeroTextVisible] = useState(false)
+  const [addLabelVisible, setAddLabelVisible] = useState(false)
   /** Panel state to restore when the hero preview is dismissed. */
   const panelBeforeHero = useRef(true)
 
@@ -114,6 +116,39 @@ export default function App() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [heroTextVisible])
+
+  // Reveal the curved hint before the cursor reaches the control itself. Using
+  // distance to the button's rectangle keeps the trigger circular enough to
+  // feel intentional while still working near the viewport edges.
+  useEffect(() => {
+    if (params.showAddButton <= 0.5) {
+      setAddLabelVisible(false)
+      return
+    }
+
+    const onPointerMove = (event: PointerEvent) => {
+      if (event.pointerType === 'touch') {
+        return
+      }
+      const button = addButtonRef.current
+      if (!button) {
+        setAddLabelVisible(false)
+        return
+      }
+      const rect = button.getBoundingClientRect()
+      const dx = Math.max(rect.left - event.clientX, 0, event.clientX - rect.right)
+      const dy = Math.max(rect.top - event.clientY, 0, event.clientY - rect.bottom)
+      const near = Math.hypot(dx, dy) <= 90
+      setAddLabelVisible((visible) => (visible === near ? visible : near))
+    }
+    const hide = () => setAddLabelVisible(false)
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('blur', hide)
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('blur', hide)
+    }
+  }, [params.showAddButton])
 
   const handleChange = (key: string, value: number) => {
     setValues((current) => ({ ...current, [key]: value }))
@@ -236,12 +271,38 @@ export default function App() {
           Its own toggle in Interaction is the way to retire it for a capture.
         */}
         {params.showAddButton > 0.5 ? (
-          <div className="absolute bottom-5 left-5 z-20">
+          <div className="absolute bottom-5 left-5 z-20 h-14 w-14 animate-add-buddy-in">
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 100 100"
+              className={`pointer-events-none absolute -left-[22px] -top-8 h-[100px] w-[100px] overflow-visible transition-opacity duration-200 ${
+                addLabelVisible ? 'opacity-100' : 'opacity-0'
+              }`}
+            >
+              <defs>
+                <path
+                  id="add-model-label-arc"
+                  d="M 10 60 A 40 40 0 0 1 90 60"
+                />
+              </defs>
+              <text className="fill-white/75 text-[8px] font-medium uppercase tracking-[0.22em]">
+                <textPath
+                  href="#add-model-label-arc"
+                  startOffset="50%"
+                  textAnchor="middle"
+                >
+                  Add model
+                </textPath>
+              </text>
+            </svg>
             <button
+              ref={addButtonRef}
               type="button"
               onClick={() => handleAddBuddy()}
-              aria-label="Add buddy"
-              className="group flex h-14 w-14 origin-center items-center justify-center rounded-full border border-white/25 bg-primary text-primary-foreground shadow-[0_8px_28px_rgba(0,224,90,0.35)] outline-none transition-transform duration-200 ease-out animate-add-buddy-in hover:scale-105 active:scale-95 focus-visible:ring-2 focus-visible:ring-primary/80"
+              onFocus={() => setAddLabelVisible(true)}
+              onBlur={() => setAddLabelVisible(false)}
+              aria-label="Add model"
+              className="group relative flex h-14 w-14 origin-center items-center justify-center rounded-full border border-white/25 bg-primary text-primary-foreground shadow-[0_8px_28px_rgba(0,224,90,0.35)] outline-none transition-transform duration-200 ease-out hover:scale-105 active:scale-95 focus-visible:ring-2 focus-visible:ring-primary/80"
             >
               <span
                 aria-hidden
