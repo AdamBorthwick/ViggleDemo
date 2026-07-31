@@ -1,5 +1,6 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ControlPanel } from './components/ControlPanel'
+import { HeroTextOverlay } from './components/HeroTextOverlay'
 import type { BuddyCommands } from './components/ModelsSection'
 import { ShaderCanvas } from './components/ShaderCanvas'
 import {
@@ -71,11 +72,48 @@ export default function App() {
   const [buddyCommands, setBuddyCommands] = useState<BuddyCommands | null>(null)
   const [controlsOpen, setControlsOpen] = useState(true)
   const [exportScope, setExportScope] = useState(0)
+  const [heroTextVisible, setHeroTextVisible] = useState(false)
+  /** Panel state to restore when the hero preview is dismissed. */
+  const panelBeforeHero = useRef(true)
 
   const params: VirtualBuddyParams = useMemo(
     () => paramsFromControls(virtualBuddyPreset, values),
     [values],
   )
+
+  /**
+   * Previews the marketing composition: hero copy over the live stage with all
+   * editor chrome out of the way, so the frame reads as it would when shipped.
+   *
+   * Authoring-only. The headless export builds render the stage without this
+   * overlay or its toggle — see effects/virtual-buddy/exportScope.ts.
+   */
+  const toggleHeroText = () => {
+    setHeroTextVisible((visible) => {
+      if (!visible) {
+        panelBeforeHero.current = controlsOpen
+        setControlsOpen(false)
+      } else {
+        setControlsOpen(panelBeforeHero.current)
+      }
+      return !visible
+    })
+  }
+
+  // Escape is the expected way out of anything that takes over the viewport.
+  useEffect(() => {
+    if (!heroTextVisible) {
+      return
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setHeroTextVisible(false)
+        setControlsOpen(panelBeforeHero.current)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [heroTextVisible])
 
   const handleChange = (key: string, value: number) => {
     setValues((current) => ({ ...current, [key]: value }))
@@ -156,7 +194,9 @@ export default function App() {
           onBuddyCommands={setBuddyCommands}
         />
 
-        {!controlsOpen ? (
+        <HeroTextOverlay visible={heroTextVisible} />
+
+        {!controlsOpen && !heroTextVisible ? (
           <div className="absolute left-4 top-4 z-20">
             <button
               type="button"
@@ -168,22 +208,43 @@ export default function App() {
           </div>
         ) : null}
 
-        {/* Full-scene handoff UI surface: add button only (no hero overlay). */}
-        <div className="absolute bottom-5 left-5 z-20">
+        {/*
+          Authoring-only hero preview. Stays reachable while the overlay is up
+          (Escape also exits) but drops to a ghost treatment so it does not sit
+          on top of the composition it exists to show.
+        */}
+        <div className="absolute right-4 top-4 z-30">
           <button
             type="button"
-            onClick={() => handleAddBuddy()}
-            aria-label="Add buddy"
-            className="group flex h-14 w-14 origin-center items-center justify-center rounded-full border border-white/25 bg-primary text-primary-foreground shadow-[0_8px_28px_rgba(0,224,90,0.35)] outline-none transition-transform duration-200 ease-out animate-add-buddy-in hover:scale-105 active:scale-95 focus-visible:ring-2 focus-visible:ring-primary/80"
+            onClick={toggleHeroText}
+            className={`rounded-md border px-3 py-2 text-sm backdrop-blur-md transition-colors ${
+              heroTextVisible
+                ? 'border-white/15 bg-black/25 text-white/60 hover:bg-black/50 hover:text-white'
+                : 'border-white/20 bg-black/50 text-foreground hover:bg-black/70'
+            }`}
           >
-            <span
-              aria-hidden
-              className="flex h-8 w-8 items-center justify-center text-[2rem] font-light leading-none"
-            >
-              +
-            </span>
+            {heroTextVisible ? 'Hide hero text' : 'Show hero text'}
           </button>
         </div>
+
+        {/* Full-scene handoff UI surface: add button only. */}
+        {!heroTextVisible ? (
+          <div className="absolute bottom-5 left-5 z-20">
+            <button
+              type="button"
+              onClick={() => handleAddBuddy()}
+              aria-label="Add buddy"
+              className="group flex h-14 w-14 origin-center items-center justify-center rounded-full border border-white/25 bg-primary text-primary-foreground shadow-[0_8px_28px_rgba(0,224,90,0.35)] outline-none transition-transform duration-200 ease-out animate-add-buddy-in hover:scale-105 active:scale-95 focus-visible:ring-2 focus-visible:ring-primary/80"
+            >
+              <span
+                aria-hidden
+                className="flex h-8 w-8 items-center justify-center text-[2rem] font-light leading-none"
+              >
+                +
+              </span>
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   )
