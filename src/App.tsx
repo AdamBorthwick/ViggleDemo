@@ -39,8 +39,9 @@ const ADD_BUTTON_DOCK_COOLDOWN_MS = 450
 const ADD_BUTTON_SIZE_PX = 56
 const ADD_BUTTON_INSET_PX = 20
 
-/** Full-height left strip: inset + button width so the resting control sits inside. */
+/** Bottom-left reveal strip — button column wide, only near the control vertically. */
 const ADD_BUTTON_HOTSPOT_WIDTH_PX = ADD_BUTTON_INSET_PX + ADD_BUTTON_SIZE_PX
+const ADD_BUTTON_HOTSPOT_HEIGHT_PX = ADD_BUTTON_INSET_PX + ADD_BUTTON_SIZE_PX + 48
 
 /**
  * Strong anti-repeat pick for the stage + button.
@@ -150,7 +151,7 @@ export default function App() {
   // distance to the button's rectangle keeps the trigger circular enough to
   // feel intentional while still working near the viewport edges.
   // Focused mode (fine pointer + hover only): after the intro pop, slide off to
-  // the left until the pointer enters the full-height left strip. Touch / coarse
+  // the left until the pointer enters the bottom-left reveal strip. Touch / coarse
   // pointers keep the button fixed so Focused always shows on mobile.
   useEffect(() => {
     const mode = Math.round(params.showAddButton)
@@ -201,7 +202,7 @@ export default function App() {
       return (
         event.clientX >= viewRect.left &&
         event.clientX < viewRect.left + ADD_BUTTON_HOTSPOT_WIDTH_PX &&
-        event.clientY >= viewRect.top &&
+        event.clientY > viewRect.bottom - ADD_BUTTON_HOTSPOT_HEIGHT_PX &&
         event.clientY <= viewRect.bottom
       )
     }

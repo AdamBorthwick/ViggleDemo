@@ -343,7 +343,7 @@ export const virtualBuddyPreset: PresetDefinition<VirtualBuddyParams> = {
           optionDescriptions: [
             'Hides the stage add button for a clean capture frame.',
             'Keeps the add button visible in the bottom-left corner.',
-            'Pops in, then hides left until you hover that edge. Always on for mobile.',
+            'Pops in, then hides left until you hover the bottom-left. Always on for mobile.',
           ],
           defaultValue: 1,
         },
