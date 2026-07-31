@@ -24,12 +24,16 @@ export type VirtualBuddyParams = {
   grabStrength: number
   throwPower: number
   breakAwayPull: number
+  /** How hard another character must bump them before they topple (0 = fragile). */
+  fallResistance: number
 
   // Scene
   cameraDistance: number
   cameraHeight: number
   playDepth: number
   brightness: number
+  /** Packed 0xRRGGBB stage void / clear colour */
+  backgroundColor: number
   /** Packed 0xRRGGBB ground plane colour */
   groundColor: number
   /** Packed 0xRRGGBB colour for the rim directional light */
@@ -37,7 +41,7 @@ export type VirtualBuddyParams = {
   /** Multiplier on base rim light intensity (1 = authored default). */
   rimLightStrength: number
   showPhysicsBodies: number
-  /** Stage add-buddy button. Off gives a clean frame for capture. */
+  /** Stage add-buddy button: 0 None, 1 Fixed, 2 Focused. */
   showAddButton: number
 
   // Filters — shared

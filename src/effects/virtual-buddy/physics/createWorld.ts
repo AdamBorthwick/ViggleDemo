@@ -44,6 +44,10 @@ export class PhysicsWorld {
   readonly world: RAPIER.World
   private readonly eventQueue = new RAPIER.EventQueue(true)
   private walls: Wall[] = []
+  /** Ceiling face collider — spawn drop-ins ignore this until they land. */
+  ceilingColliderHandle: number | null = null
+  /** Floor face collider — low-G ground pushes can tear a performance loose. */
+  floorColliderHandle: number | null = null
   private accumulator = 0
 
   /**
@@ -139,6 +143,9 @@ export class PhysicsWorld {
         )
         return { body, collider }
       })
+      // wallFaces order: floor, ceiling, left, right, back, front
+      this.floorColliderHandle = this.walls[0]?.collider.handle ?? null
+      this.ceilingColliderHandle = this.walls[1]?.collider.handle ?? null
       return
     }
 
@@ -171,6 +178,8 @@ export class PhysicsWorld {
         })
       }
     }
+    this.floorColliderHandle = this.walls[0]?.collider.handle ?? null
+    this.ceilingColliderHandle = this.walls[1]?.collider.handle ?? null
   }
 
   /**

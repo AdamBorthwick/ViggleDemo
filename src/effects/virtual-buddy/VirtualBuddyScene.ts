@@ -58,11 +58,21 @@ const AUTO_ACTIVE_FRACTION = 0.34
 const LIMP_RECOVER_MIN_SECONDS = 0.8
 const LIMP_RECOVER_VARIANCE_SECONDS = 0.7
 /** Recovery must wait for actual floor contact, especially in low gravity. */
-const RECOVERY_GROUND_HEIGHT = 0.32
-const RECOVERY_MAX_LINEAR_SPEED = 0.9
-const RECOVERY_MAX_ANGULAR_SPEED = 2.5
+const RECOVERY_GROUND_HEIGHT = 0.28
+/** Pelvis above this (× scale) is treated as airborne — no get-up yet. */
+const RECOVERY_MAX_ROOT_HEIGHT = 0.55
+/** Must stay grounded this long before a get-up may begin (stops midair pops). */
+const RECOVERY_GROUNDED_SECONDS = 0.35
+const RECOVERY_MAX_LINEAR_SPEED = 0.65
+const RECOVERY_MAX_ANGULAR_SPEED = 2.0
+/** Keep bodies this far inside the cage so CCD misses cannot escape the frame. */
+const BOUNDS_CLAMP_MARGIN = 0.08
 const ANIMATION_RATE_MIN = 0.94
 const ANIMATION_RATE_VARIANCE = 0.12
+/** Earth gravity reference — below this, ragdoll breakaways get easier. */
+const EARTH_GRAVITY = 9.81
+/** Floor on the low-G ease factor so zero-G is fragile but not hair-trigger. */
+const LOW_G_RAGDOLL_EASE_MIN = 0.22
 /** Inter-buddy contact force that is strong enough to knock a performer loose. */
 const BUDDY_IMPACT_FORCE = 300
 /** Softer contact between two walkers — enough to interrupt, not flatten. */
@@ -77,6 +87,8 @@ const BALANCE_GRACE_SECONDS = 0.35
 const BALANCE_SETTLE_SECONDS = 0.8
 /** Height above the rig's floor origin used for every entrance. */
 const SPAWN_DROP_HEIGHT = 2.1
+/** Headroom above the hips spawn so the body clears the ceiling collider. */
+const SPAWN_HEADROOM = 1.2
 const SPAWN_MIN_FALL_SECONDS = 0.45
 const SPAWN_FORCE_FINISH_SECONDS = 2.6
 /** Per-buddy pause after landing, so a crowd does not get up in unison. */
@@ -201,6 +213,8 @@ type Buddy = {
   rootCompliant: boolean
   /** Counts down once released, so the body settles before performing again. */
   limpTimer: number
+  /** Continuous grounded time while limp — gates midair get-up in low gravity. */
+  recoveryGroundedTimer: number
   /** How long this buddy's weight has sat outside its own footing. */
   balanceTimer: number
   autoActive: boolean
@@ -673,10 +687,27 @@ export class VirtualBuddyScene {
             -halfW,
             halfW,
           )
+    const zeroGravity = params.gravity <= 0.05
+    // Zero-G: place them floating in the middle of the stage. Otherwise drop
+    // in from above under gravity.
+    const spawnOrigin = zeroGravity
+      ? new THREE.Vector3(
+          0,
+          THREE.MathUtils.clamp(this.bounds.ceiling * 0.42, 0.95, 1.55),
+          0,
+        )
+      : new THREE.Vector3(
+          x,
+          Math.min(
+            SPAWN_DROP_HEIGHT,
+            Math.max(1.2, this.bounds.ceiling - SPAWN_HEADROOM),
+          ),
+          0,
+        )
     this.addBuddy(
-      new THREE.Vector3(x, SPAWN_DROP_HEIGHT, 0),
+      spawnOrigin,
       params,
-      true,
+      !zeroGravity,
       model,
       modelIndex,
       randomizeHue,
@@ -884,7 +915,7 @@ export class VirtualBuddyScene {
             if (
               !buddy.limp &&
               buddy.ragdoll === heldRagdoll &&
-              strain > params.breakAwayPull
+              strain > params.breakAwayPull * this.lowGravityRagdollEase()
             ) {
               this.setLimp(buddy, true)
             }
@@ -1041,8 +1072,11 @@ export class VirtualBuddyScene {
         },
         (collider1, collider2, force) => {
           this.handleBuddyImpact(collider1, collider2, force)
+          this.handleGroundPush(collider1, collider2, force)
         },
       )
+
+      this.clampBuddiesToBounds()
 
       for (const buddy of this.buddies) {
         buddy.view.sync()
@@ -1107,6 +1141,13 @@ export class VirtualBuddyScene {
   }
 
   private syncSceneLook(params: VirtualBuddyParams): void {
+    const backgroundHex = (params.backgroundColor >>> 0) & 0xffffff
+    if (this.scene.background instanceof THREE.Color) {
+      this.scene.background.setHex(backgroundHex)
+    } else {
+      this.scene.background = new THREE.Color(backgroundHex)
+    }
+
     const groundHex = (params.groundColor >>> 0) & 0xffffff
     this.groundMaterial.color.setHex(groundHex)
     // Bounce light from the hemi ground channel tracks the floor colour.
@@ -1117,7 +1158,7 @@ export class VirtualBuddyScene {
   }
 
   private syncBounds(params: VirtualBuddyParams): void {
-    const key = `${this.width}x${this.height}|${params.cameraDistance}|${params.playDepth}`
+    const key = `${this.width}x${this.height}|${params.cameraDistance}|${params.cameraHeight}|${params.playDepth}`
     if (key === this.boundsKey || !this.physics) {
       return
     }
@@ -1127,11 +1168,17 @@ export class VirtualBuddyScene {
     const visibleHeight =
       2 * Math.tan(THREE.MathUtils.degToRad(FOV) / 2) * params.cameraDistance
     const visibleWidth = visibleHeight * (this.width / this.height)
+    const lookY = params.cameraHeight - FEET_FRAME_MARGIN
+    // Prefer the visible frame top for throw containment, but always leave
+    // headroom for the drop-in spawn so entrances fall instead of being
+    // crushed into the ceiling.
+    const frameTop = lookY + visibleHeight * 0.5
+    const spawnClearance = SPAWN_DROP_HEIGHT + SPAWN_HEADROOM
 
     this.bounds = {
       halfWidth: Math.max(0.6, visibleWidth / 2 - 0.15),
       halfDepth: Math.max(0.3, params.playDepth),
-      ceiling: Math.max(3, visibleHeight * 1.5),
+      ceiling: Math.max(frameTop + 0.15, spawnClearance),
     }
     this.physics.setBounds(this.bounds)
   }
@@ -1256,6 +1303,7 @@ export class VirtualBuddyScene {
         Math.random() * SPAWN_RECOVERY_DELAY_VARIANCE,
       rootCompliant: false,
       limpTimer: 0,
+      recoveryGroundedTimer: 0,
       balanceTimer: 0,
       autoActive: false,
       autoPhase: 'idle',
@@ -1278,11 +1326,17 @@ export class VirtualBuddyScene {
       walkBlend: 0,
     }
     this.buddies.push(buddy)
+    if (dropIn) {
+      // Pass through the ceiling slab on the way down — otherwise the tight
+      // cage crushes the entrance into a one-frame slam.
+      ragdoll.setIgnoreCeiling(true)
+    }
     if (!dropIn && anim) {
       // Start the host's controller on an already sampled standing pose. If
       // syncMotion sees no previous clip it intentionally begins with weak
       // recovery authority, which would make a newly standing host sag first.
-      anim.play('Idle', new THREE.Vector3(origin.x, 0, origin.z))
+      // Origin Y is preserved so zero-G midair spawns float at stage centre.
+      anim.play('Idle', new THREE.Vector3(origin.x, origin.y, origin.z))
       anim.setNormalizedTime(buddy.idlePhaseOffset)
       buddy.pose = anim
     }
@@ -1317,7 +1371,7 @@ export class VirtualBuddyScene {
         buddy.limpTimer = Math.max(0, buddy.limpTimer - dt)
         if (
           buddy.limpTimer <= 0 &&
-          this.canBeginRecovery(buddy)
+          this.canBeginRecovery(buddy, Math.min(dt, 0.1))
         ) {
           this.setLimp(buddy, false)
           if (motion.auto) {
@@ -1497,6 +1551,7 @@ export class VirtualBuddyScene {
     }
 
     buddy.spawnDropping = false
+    buddy.ragdoll.setIgnoreCeiling(false)
     buddy.motionKey = ''
     if (auto) {
       buddy.autoActive = true
@@ -2279,30 +2334,49 @@ export class VirtualBuddyScene {
     )
   }
 
-  private canBeginRecovery(buddy: Buddy): boolean {
-    let nearFloor = false
-    for (const part of buddy.ragdoll.parts.values()) {
-      if (
-        part.body.translation().y <=
-        RECOVERY_GROUND_HEIGHT * buddy.ragdoll.scale
-      ) {
-        nearFloor = true
-        break
-      }
-    }
-    if (!nearFloor) {
-      return false
-    }
-
+  private canBeginRecovery(buddy: Buddy, dt: number): boolean {
     const root = buddy.rootSlot
       ? buddy.ragdoll.parts.get(buddy.rootSlot)
       : undefined
     if (!root) {
+      buddy.recoveryGroundedTimer = 0
       return false
     }
+
+    const scale = buddy.ragdoll.scale
+    const rootY = root.body.translation().y
+    // Require the pelvis itself near the floor. Any-limb checks falsely pass
+    // when a floating torso still has a dangling hand near y = 0, which is
+    // common after low-gravity throws and starts a midair get-up.
+    if (rootY > RECOVERY_MAX_ROOT_HEIGHT * scale) {
+      buddy.recoveryGroundedTimer = 0
+      return false
+    }
+
+    let supportNearFloor = false
+    for (const [slot, part] of buddy.ragdoll.parts) {
+      if (
+        (slot === 'hips' ||
+          slot === 'thighL' ||
+          slot === 'thighR' ||
+          slot === 'shinL' ||
+          slot === 'shinR' ||
+          slot === 'footL' ||
+          slot === 'footR') &&
+        part.body.translation().y <= RECOVERY_GROUND_HEIGHT * scale
+      ) {
+        supportNearFloor = true
+        break
+      }
+    }
+    if (!supportNearFloor) {
+      buddy.recoveryGroundedTimer = 0
+      return false
+    }
+
     const velocity = root.body.linvel()
     const angularVelocity = root.body.angvel()
-    return (
+    const settled =
       Math.hypot(velocity.x, velocity.y, velocity.z) <=
         RECOVERY_MAX_LINEAR_SPEED &&
       Math.hypot(
@@ -2310,7 +2384,120 @@ export class VirtualBuddyScene {
         angularVelocity.y,
         angularVelocity.z,
       ) <= RECOVERY_MAX_ANGULAR_SPEED
+
+    if (!settled) {
+      buddy.recoveryGroundedTimer = 0
+      return false
+    }
+
+    buddy.recoveryGroundedTimer += dt
+    return buddy.recoveryGroundedTimer >= RECOVERY_GROUNDED_SECONDS
+  }
+
+  /**
+   * Hard stop for bodies that tunnel past the invisible cage (fast throws /
+   * zero-G drift). Soft walls alone are not enough without CCD on every part.
+   */
+  private clampBuddiesToBounds(): void {
+    const { halfWidth, halfDepth, ceiling } = this.bounds
+    const maxX = halfWidth - BOUNDS_CLAMP_MARGIN
+    const maxZ = halfDepth - BOUNDS_CLAMP_MARGIN
+    const maxY = ceiling - BOUNDS_CLAMP_MARGIN
+
+    for (const buddy of this.buddies) {
+      // Drop-ins must fall under gravity; clamping every limb into a tight
+      // ceiling yanks the figure onto the stage in one frame.
+      const clampY = !buddy.spawnDropping
+      for (const part of buddy.ragdoll.parts.values()) {
+        const at = part.body.translation()
+        const x = THREE.MathUtils.clamp(at.x, -maxX, maxX)
+        const y = clampY ? THREE.MathUtils.clamp(at.y, 0.02, maxY) : at.y
+        const z = THREE.MathUtils.clamp(at.z, -maxZ, maxZ)
+        if (
+          Math.abs(x - at.x) > 1e-4 ||
+          Math.abs(y - at.y) > 1e-4 ||
+          Math.abs(z - at.z) > 1e-4
+        ) {
+          part.body.setTranslation({ x, y, z }, true)
+          const vel = part.body.linvel()
+          // Kill outward velocity so low gravity does not immediately push
+          // them through the clamp again next step.
+          part.body.setLinvel(
+            {
+              x: x !== at.x ? vel.x * 0.2 : vel.x,
+              y: clampY && y !== at.y && vel.y > 0 ? 0 : vel.y,
+              z: z !== at.z ? vel.z * 0.2 : vel.z,
+            },
+            true,
+          )
+        }
+      }
+    }
+  }
+
+  /**
+   * Below Earth gravity, performances shed into ragdoll more easily. At or
+   * above 9.81 the factor is 1 — higher G does not toughen breakaways.
+   */
+  private lowGravityRagdollEase(): number {
+    const gravity = this.lastParams?.gravity ?? EARTH_GRAVITY
+    if (gravity >= EARTH_GRAVITY) {
+      return 1
+    }
+    return Math.max(LOW_G_RAGDOLL_EASE_MIN, gravity / EARTH_GRAVITY)
+  }
+
+  /**
+   * Under low gravity the same muscle-tone / foot-plant forces that read as
+   * standing on Earth push the body off the floor. Treat a hard floor reaction
+   * as a break-away so they go limp instead of bouncing forever.
+   */
+  private handleGroundPush(
+    collider1: number,
+    collider2: number,
+    force: number,
+  ): void {
+    const floor = this.physics?.floorColliderHandle
+    if (floor === null || floor === undefined) {
+      return
+    }
+    const ease = this.lowGravityRagdollEase()
+    if (ease >= 1) {
+      return
+    }
+
+    const buddyHandle =
+      collider1 === floor ? collider2 : collider2 === floor ? collider1 : null
+    if (buddyHandle === null) {
+      return
+    }
+
+    const buddy = this.buddies.find((candidate) =>
+      candidate.ragdoll.bodyForCollider(buddyHandle),
     )
+    if (
+      !buddy ||
+      buddy.limp ||
+      buddy.spawnDropping ||
+      !buddy.anim?.isPlaying
+    ) {
+      return
+    }
+
+    let mass = 0
+    for (const part of buddy.ragdoll.parts.values()) {
+      mass += part.body.mass()
+    }
+    const resist = Math.max(0, Math.min(1, this.lastParams?.fallResistance ?? 0.55))
+    // Compare against Earth-weight scale, then ease down with G so light worlds
+    // ragdoll from ordinary plant / push-off forces.
+    const threshold =
+      mass * EARTH_GRAVITY * (1.6 + resist * 3.2) * ease
+    if (force < threshold) {
+      return
+    }
+
+    this.knockDown(buddy)
   }
 
   private handleBuddyImpact(collider1: number, collider2: number, force: number): void {
@@ -2326,10 +2513,17 @@ export class VirtualBuddyScene {
 
     const firstIsRagdoll = !first.anim?.isPlaying || first.limp
     const secondIsRagdoll = !second.anim?.isPlaying || second.limp
+    const resist = Math.max(0, Math.min(1, this.lastParams?.fallResistance ?? 0.55))
+    const lowG = this.lowGravityRagdollEase()
+    const projectileThreshold =
+      BUDDY_IMPACT_FORCE * (0.35 + resist * 2.5) * lowG
+    const walkerKnockThreshold =
+      WALKER_IMPACT_FORCE * (1 + resist * 12) * lowG
+    const walkerNoticeThreshold = WALKER_IMPACT_FORCE * lowG
 
     // A free ragdoll is the projectile. Ordinary contact between two animated
     // performers should not make a crowded stage collapse on its own.
-    if (force >= BUDDY_IMPACT_FORCE) {
+    if (force >= projectileThreshold) {
       const struck =
         firstIsRagdoll && !secondIsRagdoll
           ? second
@@ -2343,7 +2537,7 @@ export class VirtualBuddyScene {
     }
 
     // Two walkers bumping into each other stop, recoil slightly, and turn away.
-    if (force < WALKER_IMPACT_FORCE) {
+    if (force < walkerNoticeThreshold) {
       return
     }
     const firstWalking =
@@ -2361,14 +2555,24 @@ export class VirtualBuddyScene {
     }
 
     // A locomoting root has authored intent beyond its instantaneous physics
-    // velocity. Promote the contact to a reliable knockdown on the stationary
-    // buddy instead of depending on one solver frame to transfer enough force.
+    // velocity. Fall resistance raises the force needed to promote that contact
+    // into a knockdown; lighter bumps only recoil.
     if (firstWalking && !secondWalking && !second.limp) {
-      this.knockDown(second)
+      if (force >= walkerKnockThreshold) {
+        this.knockDown(second)
+      } else {
+        this.bumpWalker(first, second)
+        this.bumpWalker(second, first)
+      }
       return
     }
     if (secondWalking && !firstWalking && !first.limp) {
-      this.knockDown(first)
+      if (force >= walkerKnockThreshold) {
+        this.knockDown(first)
+      } else {
+        this.bumpWalker(first, second)
+        this.bumpWalker(second, first)
+      }
       return
     }
 
@@ -2404,13 +2608,18 @@ export class VirtualBuddyScene {
       // Walking is controlled falling: a stride legitimately carries the mass
       // ahead of the planted foot, so locomotion is judged far more loosely.
       const locomotion = clipMeta(clip)?.kind === 'locomotion'
+      const lowG = this.lowGravityRagdollEase()
       const limit =
         (locomotion ? BALANCE_MAX_OFFSET_MOVING : BALANCE_MAX_OFFSET) *
-        buddy.ragdoll.scale
+        buddy.ragdoll.scale *
+        lowG
 
       if (buddy.ragdoll.balanceOffset() > limit) {
         buddy.balanceTimer += dt
-        if (buddy.balanceTimer >= BALANCE_GRACE_SECONDS) {
+        const resist = Math.max(0, Math.min(1, this.lastParams?.fallResistance ?? 0.55))
+        const grace =
+          BALANCE_GRACE_SECONDS * (0.6 + resist * 1.4) * lowG
+        if (buddy.balanceTimer >= grace) {
           buddy.balanceTimer = 0
           this.knockDown(buddy)
         }
@@ -2473,8 +2682,10 @@ export class VirtualBuddyScene {
     }
     buddy.limp = limp
     buddy.limpTimer = 0
+    buddy.recoveryGroundedTimer = 0
     if (limp) {
       buddy.spawnDropping = false
+      buddy.ragdoll.setIgnoreCeiling(false)
       if (buddy.partnerId !== null) {
         this.cancelHandshake(buddy)
       }

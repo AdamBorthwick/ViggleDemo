@@ -64,21 +64,32 @@ export function SliderControl({ control, value, onChange }: SliderControlProps) 
               ;(event.target as HTMLInputElement).blur()
             }
           }}
-          className="w-11 shrink-0 rounded border border-transparent bg-transparent px-1 py-0.5 text-right font-mono text-[11px] text-muted-foreground tabular-nums outline-none transition-colors hover:border-border hover:bg-secondary/60 focus:border-border focus:bg-secondary focus:text-foreground focus:ring-1 focus:ring-ring/30"
+          className="box-border w-11 shrink-0 rounded border border-transparent bg-transparent py-0.5 pl-1 pr-0 text-right font-mono text-[11px] text-muted-foreground tabular-nums outline-none transition-[width,padding,margin,color,background-color,border-color,box-shadow] hover:-mr-0.5 hover:w-[calc(2.75rem+2px)] hover:border-border hover:bg-secondary/60 hover:pr-0.5 focus:-mr-0.5 focus:w-[calc(2.75rem+2px)] focus:border-border focus:bg-secondary focus:pr-0.5 focus:text-foreground focus:ring-1 focus:ring-ring/30"
         />
       </div>
       {control.description ? (
-        <p className="text-xs leading-relaxed text-muted-foreground">{control.description}</p>
+        <p className="text-[11px] leading-snug text-muted-foreground">{control.description}</p>
       ) : null}
-      <input
-        type="range"
-        min={control.min}
-        max={control.max}
-        step={control.step}
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-        className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-secondary accent-primary"
-      />
+      <div
+        className="flex flex-col"
+        style={{ gap: control.lowLabel || control.highLabel ? 2 : 0 }}
+      >
+        {control.lowLabel || control.highLabel ? (
+          <div className="flex justify-between gap-2 text-[9px] leading-none tracking-normal text-muted-foreground/55">
+            <span>{control.lowLabel ?? ''}</span>
+            <span className="text-right">{control.highLabel ?? ''}</span>
+          </div>
+        ) : null}
+        <input
+          type="range"
+          min={control.min}
+          max={control.max}
+          step={control.step}
+          value={value}
+          onChange={(event) => onChange(Number(event.target.value))}
+          className="control-slider h-3 w-full cursor-pointer appearance-none bg-transparent"
+        />
+      </div>
     </div>
   )
 }

@@ -25,6 +25,10 @@ export type SliderControlDef = ControlBase & {
   max: number
   step: number
   defaultValue: number
+  /** Caption under the low end of the track. */
+  lowLabel?: string
+  /** Caption under the high end of the track. */
+  highLabel?: string
 }
 
 export type CheckboxControlDef = ControlBase & {
@@ -40,6 +44,8 @@ export type SelectControlDef = ControlBase & {
   kind: 'select'
   options: string[]
   defaultValue: number
+  /** Optional copy for each option — shown for the current selection. */
+  optionDescriptions?: string[]
 }
 
 /**

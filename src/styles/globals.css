@@ -299,6 +299,44 @@
   }
 }
 
+/* Range thumb fills the control height so end-labels can sit 2px above the circle. */
+.control-slider {
+  --thumb-size: 12px;
+}
+
+.control-slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--secondary);
+}
+
+.control-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: var(--thumb-size);
+  height: var(--thumb-size);
+  margin-top: -3px; /* center 12px thumb on 6px track */
+  border-radius: 9999px;
+  background: var(--primary);
+  border: none;
+  cursor: pointer;
+}
+
+.control-slider::-moz-range-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--secondary);
+}
+
+.control-slider::-moz-range-thumb {
+  width: var(--thumb-size);
+  height: var(--thumb-size);
+  border-radius: 9999px;
+  background: var(--primary);
+  border: none;
+  cursor: pointer;
+}
+
 /* Stage add control — delayed pop from the button’s own centre (no slide). */
 @keyframes add-buddy-in {
   0% {

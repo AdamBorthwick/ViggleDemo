@@ -224,6 +224,8 @@ export class Ragdoll {
   private readonly world: RAPIER.World
   /** Contact exclusions registered with the world, withdrawn on dispose. */
   private readonly excluded: Array<[number, number]> = []
+  /** Ceiling pairs suppressed while a drop-in falls through the top of the cage. */
+  private readonly ceilingIgnored: Array<[number, number]> = []
   /** Each slot's subtree including itself — what its joint has to hold up. */
   private readonly descendants = new Map<BoneSlot, RagdollPart[]>()
   /** The parentless part, used as the frame for limb-placement checks. */
@@ -297,9 +299,9 @@ export class Ragdoll {
           .setTranslation(_center.x, _center.y, _center.z)
           .setLinearDamping(options.linearDamping)
           .setAngularDamping(options.angularDamping)
-          // Distal parts move fastest and are the first to tunnel through thin
-          // geometry between fixed physics steps.
-          .setCcdEnabled(isDistal),
+          // Every link can tunnel the thin ceiling on a hard throw, especially
+          // under low gravity where upward speed never bleeds off.
+          .setCcdEnabled(true),
       )
 
       const rest = segmentQuaternion(segment)
@@ -1226,7 +1228,38 @@ export class Ragdoll {
     return undefined
   }
 
+  /**
+   * Drop-ins start above / through the ceiling slab. Ignoring it for the fall
+   * lets them enter under gravity instead of being crushed downward.
+   */
+  setIgnoreCeiling(ignore: boolean): void {
+    const ceiling = this.physics.ceilingColliderHandle
+    if (ceiling === null) {
+      return
+    }
+
+    if (!ignore) {
+      for (const [a, b] of this.ceilingIgnored) {
+        this.physics.removeContactPair(a, b)
+      }
+      this.ceilingIgnored.length = 0
+      return
+    }
+
+    if (this.ceilingIgnored.length > 0) {
+      return
+    }
+
+    for (const part of this.parts.values()) {
+      for (const collider of [part.collider, ...part.proxies]) {
+        this.physics.excludeContactPair(collider.handle, ceiling)
+        this.ceilingIgnored.push([collider.handle, ceiling])
+      }
+    }
+  }
+
   dispose(): void {
+    this.setIgnoreCeiling(false)
     for (const [a, b] of this.excluded) {
       this.physics.removeContactPair(a, b)
     }

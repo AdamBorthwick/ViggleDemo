@@ -145,7 +145,7 @@ export type VirtualBuddyExport = typeof virtualBuddyExport
 `
 }
 
-export function exportFilename(scopeIndex: number, presetId: string): string {
-  const scope = scopeIdFromIndex(scopeIndex)
-  return `${presetId}-${scope}-settings.ts`
+/** Browser download name — matches the replace target in headless repos. */
+export function exportFilename(_scopeIndex?: number, _presetId?: string): string {
+  return 'virtualBuddyExport.ts'
 }

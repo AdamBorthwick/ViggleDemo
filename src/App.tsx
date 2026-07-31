@@ -21,6 +21,28 @@ const SPAWNABLE_MODELS = MODELS.map((model, index) => ({ model, index })).filter
   (entry) => Boolean(entry.model.url),
 )
 
+/** Stage add-button modes (`showAddButton` select indices). */
+const ADD_BUTTON_NONE = 0
+const ADD_BUTTON_FIXED = 1
+const ADD_BUTTON_FOCUSED = 2
+
+/** Intro pop delay + duration — after this, Focused mode docks off-frame. */
+const ADD_BUTTON_INTRO_MS = 1650
+
+/** Focused slide-out / slide-in durations (keep in sync with transition classes). */
+const ADD_BUTTON_DOCK_OUT_MS = 1100
+const ADD_BUTTON_DOCK_IN_MS = 700
+
+/** Pause after a dock motion before another in/out can start. */
+const ADD_BUTTON_DOCK_COOLDOWN_MS = 450
+
+/** Stage add control size (`h-14 w-14`) and inset (`left-5` / `bottom-5`). */
+const ADD_BUTTON_SIZE_PX = 56
+const ADD_BUTTON_INSET_PX = 20
+
+/** Full-height left strip: inset + button width so the resting control sits inside. */
+const ADD_BUTTON_HOTSPOT_WIDTH_PX = ADD_BUTTON_INSET_PX + ADD_BUTTON_SIZE_PX
+
 /**
  * Strong anti-repeat pick for the stage + button.
  * 1) Prefer types not on stage at all (uniform among missing).
@@ -75,8 +97,16 @@ export default function App() {
   const [exportScope, setExportScope] = useState(0)
   const [heroTextVisible, setHeroTextVisible] = useState(false)
   const [addLabelVisible, setAddLabelVisible] = useState(false)
+  /** Focused mode: true once the button has slid off-frame after its intro. */
+  const [addButtonDocked, setAddButtonDocked] = useState(false)
+  /** After the slide-out finishes, drop from layout so it cannot intercept. */
+  const [addButtonOffscreen, setAddButtonOffscreen] = useState(false)
   /** Panel state to restore when the hero preview is dismissed. */
   const panelBeforeHero = useRef(true)
+  const addPointerNearRef = useRef(false)
+  const addButtonOffscreenRef = useRef(false)
+  const addButtonDockedRef = useRef(false)
+  const addDockLockUntilRef = useRef(0)
 
   const params: VirtualBuddyParams = useMemo(
     () => paramsFromControls(virtualBuddyPreset, values),
@@ -120,31 +150,132 @@ export default function App() {
   // Reveal the curved hint before the cursor reaches the control itself. Using
   // distance to the button's rectangle keeps the trigger circular enough to
   // feel intentional while still working near the viewport edges.
+  // Focused mode (fine pointer + hover only): after the intro pop, slide off to
+  // the left until the pointer enters the full-height left strip. Touch / coarse
+  // pointers keep the button fixed so Focused always shows on mobile.
   useEffect(() => {
-    if (params.showAddButton <= 0.5) {
+    const mode = Math.round(params.showAddButton)
+    if (mode === ADD_BUTTON_NONE) {
       setAddLabelVisible(false)
+      setAddButtonDocked(false)
+      setAddButtonOffscreen(false)
+      addButtonOffscreenRef.current = false
+      addButtonDockedRef.current = false
+      addDockLockUntilRef.current = 0
+      addPointerNearRef.current = false
       return
+    }
+
+    setAddButtonDocked(false)
+    setAddButtonOffscreen(false)
+    addButtonOffscreenRef.current = false
+    addButtonDockedRef.current = false
+    addDockLockUntilRef.current = 0
+    addPointerNearRef.current = false
+
+    const canDock =
+      mode === ADD_BUTTON_FOCUSED &&
+      typeof window !== 'undefined' &&
+      window.matchMedia('(hover: hover) and (pointer: fine)').matches
+
+    let introDone = !canDock
+    let introTimer = 0
+    if (canDock) {
+      introTimer = window.setTimeout(() => {
+        introDone = true
+        if (!addPointerNearRef.current) {
+          addButtonDockedRef.current = true
+          setAddButtonDocked(true)
+          addDockLockUntilRef.current =
+            Date.now() + ADD_BUTTON_DOCK_OUT_MS + ADD_BUTTON_DOCK_COOLDOWN_MS
+          setAddLabelVisible(false)
+        }
+      }, ADD_BUTTON_INTRO_MS)
+    }
+
+    const isNearHotspot = (event: PointerEvent) => {
+      const view = viewRef.current
+      if (!view) {
+        return false
+      }
+      const viewRect = view.getBoundingClientRect()
+      return (
+        event.clientX >= viewRect.left &&
+        event.clientX < viewRect.left + ADD_BUTTON_HOTSPOT_WIDTH_PX &&
+        event.clientY >= viewRect.top &&
+        event.clientY <= viewRect.bottom
+      )
+    }
+
+    const isNearButton = (event: PointerEvent) => {
+      const button = addButtonRef.current
+      if (!button) {
+        return false
+      }
+      const rect = button.getBoundingClientRect()
+      const dx = Math.max(rect.left - event.clientX, 0, event.clientX - rect.right)
+      const dy = Math.max(rect.top - event.clientY, 0, event.clientY - rect.bottom)
+      return Math.hypot(dx, dy) <= 90
+    }
+
+    const lockDockMotion = (durationMs: number) => {
+      addDockLockUntilRef.current = Date.now() + durationMs + ADD_BUTTON_DOCK_COOLDOWN_MS
+    }
+
+    const revealFromOffscreen = () => {
+      addButtonOffscreenRef.current = false
+      setAddButtonOffscreen(false)
+      lockDockMotion(ADD_BUTTON_DOCK_IN_MS)
+      // Unhide while still translated left, then slide in on the next frame.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          addButtonDockedRef.current = false
+          setAddButtonDocked(false)
+        })
+      })
     }
 
     const onPointerMove = (event: PointerEvent) => {
       if (event.pointerType === 'touch') {
         return
       }
-      const button = addButtonRef.current
-      if (!button) {
-        setAddLabelVisible(false)
-        return
+      const near = canDock ? isNearHotspot(event) : isNearButton(event)
+      addPointerNearRef.current = near
+      if (canDock && introDone && Date.now() >= addDockLockUntilRef.current) {
+        if (near && addButtonDockedRef.current) {
+          if (addButtonOffscreenRef.current) {
+            revealFromOffscreen()
+          } else {
+            addButtonDockedRef.current = false
+            setAddButtonDocked(false)
+            lockDockMotion(ADD_BUTTON_DOCK_IN_MS)
+          }
+        } else if (!near && !addButtonDockedRef.current) {
+          addButtonDockedRef.current = true
+          setAddButtonDocked(true)
+          lockDockMotion(ADD_BUTTON_DOCK_OUT_MS)
+        }
       }
-      const rect = button.getBoundingClientRect()
-      const dx = Math.max(rect.left - event.clientX, 0, event.clientX - rect.right)
-      const dy = Math.max(rect.top - event.clientY, 0, event.clientY - rect.bottom)
-      const near = Math.hypot(dx, dy) <= 90
       setAddLabelVisible((visible) => (visible === near ? visible : near))
     }
-    const hide = () => setAddLabelVisible(false)
+    const hide = () => {
+      addPointerNearRef.current = false
+      setAddLabelVisible(false)
+      if (
+        canDock &&
+        introDone &&
+        Date.now() >= addDockLockUntilRef.current &&
+        !addButtonDockedRef.current
+      ) {
+        addButtonDockedRef.current = true
+        setAddButtonDocked(true)
+        lockDockMotion(ADD_BUTTON_DOCK_OUT_MS)
+      }
+    }
     window.addEventListener('pointermove', onPointerMove)
     window.addEventListener('blur', hide)
     return () => {
+      window.clearTimeout(introTimer)
       window.removeEventListener('pointermove', onPointerMove)
       window.removeEventListener('blur', hide)
     }
@@ -268,49 +399,80 @@ export default function App() {
           It stays put through the hero preview and with the panel closed,
           because it is part of the shipped composition rather than editor
           chrome — the hero frame should show the affordance a visitor gets.
-          Its own toggle in Interaction is the way to retire it for a capture.
+          Interaction → Add button: Fixed / None / Focused.
         */}
-        {params.showAddButton > 0.5 ? (
-          <div className="absolute bottom-5 left-5 z-20 h-14 w-14 animate-add-buddy-in">
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 100 100"
-              className={`pointer-events-none absolute -left-[22px] -top-8 h-[100px] w-[100px] overflow-visible transition-opacity duration-200 ${
-                addLabelVisible ? 'opacity-100' : 'opacity-0'
-              }`}
+        {Math.round(params.showAddButton) !== ADD_BUTTON_NONE ? (
+          <div
+            onTransitionEnd={(event) => {
+              if (event.propertyName !== 'transform') {
+                return
+              }
+              if (addButtonDocked) {
+                addButtonOffscreenRef.current = true
+                setAddButtonOffscreen(true)
+              }
+            }}
+            className={`absolute bottom-5 left-5 z-[5] transition-transform ${
+              addButtonDocked
+                ? 'pointer-events-none -translate-x-[calc(100%+5.5rem)] duration-[1100ms] ease'
+                : 'translate-x-0 duration-700 ease-out'
+            } ${addButtonOffscreen ? 'hidden' : ''}`}
+          >
+            <div
+              key={Math.round(params.showAddButton)}
+              className="relative h-14 w-14 animate-add-buddy-in"
             >
-              <defs>
-                <path
-                  id="add-model-label-arc"
-                  d="M 10 60 A 40 40 0 0 1 90 60"
-                />
-              </defs>
-              <text className="fill-white/75 text-[8px] font-medium uppercase tracking-[0.22em]">
-                <textPath
-                  href="#add-model-label-arc"
-                  startOffset="50%"
-                  textAnchor="middle"
-                >
-                  Add model
-                </textPath>
-              </text>
-            </svg>
-            <button
-              ref={addButtonRef}
-              type="button"
-              onClick={() => handleAddBuddy()}
-              onFocus={() => setAddLabelVisible(true)}
-              onBlur={() => setAddLabelVisible(false)}
-              aria-label="Add model"
-              className="group relative flex h-14 w-14 origin-center items-center justify-center rounded-full border border-white/25 bg-primary text-primary-foreground shadow-[0_8px_28px_rgba(0,224,90,0.35)] outline-none transition-transform duration-200 ease-out hover:scale-105 active:scale-95 focus-visible:ring-2 focus-visible:ring-primary/80"
-            >
-              <span
-                aria-hidden
-                className="flex h-8 w-8 items-center justify-center text-[2rem] font-light leading-none"
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 100 100"
+                className={`pointer-events-none absolute -left-[22px] -top-8 h-[100px] w-[100px] overflow-visible transition-opacity duration-200 ${
+                  addLabelVisible ? 'opacity-100' : 'opacity-0'
+                }`}
               >
-                +
-              </span>
-            </button>
+                <defs>
+                  <path
+                    id="add-model-label-arc"
+                    d="M 10 60 A 40 40 0 0 1 90 60"
+                  />
+                </defs>
+                <text className="fill-white/75 text-[8px] font-medium uppercase tracking-[0.22em]">
+                  <textPath
+                    href="#add-model-label-arc"
+                    startOffset="50%"
+                    textAnchor="middle"
+                  >
+                    Add model
+                  </textPath>
+                </text>
+              </svg>
+              <button
+                ref={addButtonRef}
+                type="button"
+                onClick={() => handleAddBuddy()}
+                onFocus={() => {
+                  setAddLabelVisible(true)
+                  if (Math.round(params.showAddButton) === ADD_BUTTON_FOCUSED) {
+                    addButtonOffscreenRef.current = false
+                    addButtonDockedRef.current = false
+                    addDockLockUntilRef.current =
+                      Date.now() + ADD_BUTTON_DOCK_IN_MS + ADD_BUTTON_DOCK_COOLDOWN_MS
+                    setAddButtonOffscreen(false)
+                    setAddButtonDocked(false)
+                  }
+                }}
+                onBlur={() => setAddLabelVisible(false)}
+                aria-label="Add model"
+                tabIndex={addButtonDocked ? -1 : 0}
+                className="group relative flex h-14 w-14 origin-center items-center justify-center rounded-full border border-white/25 bg-primary text-primary-foreground shadow-[0_8px_28px_rgba(0,224,90,0.35)] outline-none transition-transform duration-200 ease-out hover:scale-105 active:scale-95 focus-visible:ring-2 focus-visible:ring-primary/80"
+              >
+                <span
+                  aria-hidden
+                  className="flex h-8 w-8 items-center justify-center text-[2rem] font-light leading-none"
+                >
+                  +
+                </span>
+              </button>
+            </div>
           </div>
         ) : null}
       </div>

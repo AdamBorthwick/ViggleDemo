@@ -22,6 +22,8 @@ const SELECT_INNER =
 export function SelectControl({ control, value, onChange }: SelectControlProps) {
   const selected = Math.round(value)
   const isDefault = selected === Math.round(control.defaultValue)
+  const optionDescription = control.optionDescriptions?.[selected]
+  const description = optionDescription ?? control.description
 
   return (
     <div className="space-y-1.5">
@@ -39,7 +41,7 @@ export function SelectControl({ control, value, onChange }: SelectControlProps) 
           </button>
         ) : null}
       </div>
-      {control.description ? (
+      {!control.optionDescriptions && control.description ? (
         <p className="text-xs leading-relaxed text-muted-foreground">{control.description}</p>
       ) : null}
       <div
@@ -68,6 +70,9 @@ export function SelectControl({ control, value, onChange }: SelectControlProps) 
           </button>
         ))}
       </div>
+      {control.optionDescriptions && description ? (
+        <p className="text-xs leading-relaxed text-muted-foreground">{description}</p>
+      ) : null}
     </div>
   )
 }
