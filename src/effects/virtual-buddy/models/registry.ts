@@ -587,6 +587,9 @@ export function loadModel(url: string): Promise<LoadedModel> {
       }
       mesh.castShadow = true
       mesh.receiveShadow = true
+      // Bind-pose bounds are wrong once Mixamo skins deform; keep every mesh
+      // drawable so close-up grabs do not cull hair / body parts (esp. Dancer).
+      mesh.frustumCulled = false
 
       const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
       for (const material of materials) {
@@ -605,7 +608,6 @@ export function loadModel(url: string): Promise<LoadedModel> {
           colored.depthWrite = true
           colored.side = THREE.DoubleSide
           mesh.renderOrder = 2
-          mesh.frustumCulled = false
           // Slight lift without full emissiveMap wash on transparent cards.
           if (colored.emissive) {
             colored.emissive.setRGB(0.08, 0.08, 0.08)

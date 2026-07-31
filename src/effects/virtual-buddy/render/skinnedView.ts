@@ -97,6 +97,12 @@ export class SkinnedView {
         return
       }
 
+      // Ragdoll / Mixamo skinning moves vertices far from the bind-pose bounds.
+      // Default frustum culling then drops hair, cloth cards, and body parts
+      // when the camera gets close — most noticeable on multi-mesh assets
+      // like the Dancer (separate hair / body skins).
+      mesh.frustumCulled = false
+
       const sourceList = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
       const clonedList = sourceList.map((material) => {
         const cloned = material.clone() as THREE.MeshStandardMaterial
@@ -116,7 +122,6 @@ export class SkinnedView {
           cloned.depthWrite = true
           cloned.side = THREE.DoubleSide
           mesh.renderOrder = 2
-          mesh.frustumCulled = false
         }
 
         let splitUniforms: CostumeTintUniforms | null = null
