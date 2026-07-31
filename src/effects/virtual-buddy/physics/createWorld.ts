@@ -27,10 +27,23 @@ function pairKey(a: number, b: number): number {
   return a < b ? a * 0x10000 + b : b * 0x10000 + a
 }
 
+type Wall = {
+  body: RAPIER.RigidBody
+  collider: RAPIER.Collider
+}
+
+type WallFace = {
+  half: [number, number, number]
+  at: [number, number, number]
+}
+
+/** Below this a bounds change is not worth touching the solver for. */
+const BOUNDS_EPSILON = 1e-4
+
 export class PhysicsWorld {
   readonly world: RAPIER.World
   private readonly eventQueue = new RAPIER.EventQueue(true)
-  private walls: RAPIER.RigidBody[] = []
+  private walls: Wall[] = []
   private accumulator = 0
 
   /**
@@ -80,23 +93,12 @@ export class PhysicsWorld {
     this.excludedPairs.delete(pairKey(a, b))
   }
 
-  /**
-   * Rebuilds the invisible cage. Derived from the camera frustum, so this has
-   * to be re-run on resize — including when the control panel opens and changes
-   * the viewport width.
-   */
-  setBounds({ halfWidth, halfDepth, ceiling }: Bounds): void {
-    for (const wall of this.walls) {
-      this.world.removeRigidBody(wall)
-    }
-    this.walls = []
-
+  /** The six cage faces for a given bounds, in a stable order. */
+  private static wallFaces({ halfWidth, halfDepth, ceiling }: Bounds): WallFace[] {
     const t = WALL_THICKNESS
-    const faces: Array<{
-      half: [number, number, number]
-      at: [number, number, number]
-    }> = [
-      // floor
+    return [
+      // Floor. Sunk by its own thickness so the walking surface is exactly
+      // y = 0 at every size — only the extent changes as the frustum does.
       { half: [halfWidth + t, t, halfDepth + t], at: [0, -t, 0] },
       // ceiling, generous so a hard throw does not clip it
       { half: [halfWidth + t, t, halfDepth + t], at: [0, ceiling + t, 0] },
@@ -107,16 +109,67 @@ export class PhysicsWorld {
       { half: [halfWidth + t, ceiling + t, t], at: [0, ceiling * 0.5, -halfDepth - t] },
       { half: [halfWidth + t, ceiling + t, t], at: [0, ceiling * 0.5, halfDepth + t] },
     ]
+  }
 
-    for (const face of faces) {
-      const body = this.world.createRigidBody(
-        RAPIER.RigidBodyDesc.fixed().setTranslation(...face.at),
-      )
-      this.world.createCollider(
-        RAPIER.ColliderDesc.cuboid(...face.half).setFriction(0.7).setRestitution(0.1),
-        body,
-      )
-      this.walls.push(body)
+  /**
+   * Rebuilds the invisible cage. Derived from the camera frustum, so this has
+   * to be re-run on resize — including when the control panel opens and changes
+   * the viewport width.
+   *
+   * Walls are mutated in place rather than recreated. Dragging a window edge
+   * fires a resize every frame, and destroying the bodies each time destroyed
+   * the floor with them: standing buddies lost the contact holding them up and
+   * sank through the stage. Resizing a collider leaves the body — and its
+   * contacts — intact, and the floor's top face never moves at all.
+   */
+  setBounds(bounds: Bounds): void {
+    const faces = PhysicsWorld.wallFaces(bounds)
+
+    if (this.walls.length !== faces.length) {
+      for (const wall of this.walls) {
+        this.world.removeRigidBody(wall.body)
+      }
+      this.walls = faces.map((face) => {
+        const body = this.world.createRigidBody(
+          RAPIER.RigidBodyDesc.fixed().setTranslation(...face.at),
+        )
+        const collider = this.world.createCollider(
+          RAPIER.ColliderDesc.cuboid(...face.half).setFriction(0.7).setRestitution(0.1),
+          body,
+        )
+        return { body, collider }
+      })
+      return
+    }
+
+    for (let i = 0; i < faces.length; i += 1) {
+      const face = faces[i]!
+      const wall = this.walls[i]!
+
+      const at = wall.body.translation()
+      if (
+        Math.abs(at.x - face.at[0]) > BOUNDS_EPSILON ||
+        Math.abs(at.y - face.at[1]) > BOUNDS_EPSILON ||
+        Math.abs(at.z - face.at[2]) > BOUNDS_EPSILON
+      ) {
+        wall.body.setTranslation(
+          { x: face.at[0], y: face.at[1], z: face.at[2] },
+          false,
+        )
+      }
+
+      const half = (wall.collider.shape as RAPIER.Cuboid).halfExtents
+      if (
+        Math.abs(half.x - face.half[0]) > BOUNDS_EPSILON ||
+        Math.abs(half.y - face.half[1]) > BOUNDS_EPSILON ||
+        Math.abs(half.z - face.half[2]) > BOUNDS_EPSILON
+      ) {
+        wall.collider.setHalfExtents({
+          x: face.half[0],
+          y: face.half[1],
+          z: face.half[2],
+        })
+      }
     }
   }
 
