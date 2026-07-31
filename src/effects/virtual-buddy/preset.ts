@@ -41,6 +41,7 @@ export const virtualBuddyPreset: PresetDefinition<VirtualBuddyParams> = {
     leftLightColor: 0x00e05a,
     rimLightStrength: 1,
     showPhysicsBodies: 0,
+    showAddButton: 1,
 
     filter: 0,
     filterStrength: 1,
@@ -242,6 +243,15 @@ export const virtualBuddyPreset: PresetDefinition<VirtualBuddyParams> = {
       controls: [
         {
           kind: 'slider',
+          key: 'bodyScale',
+          label: 'Body scale',
+          min: 0.5,
+          max: 1.6,
+          step: 0.05,
+          defaultValue: 1.1,
+        },
+        {
+          kind: 'slider',
           key: 'muscleTone',
           label: 'Muscle tone',
           description: 'How firmly a performing body holds its pose.',
@@ -293,6 +303,14 @@ export const virtualBuddyPreset: PresetDefinition<VirtualBuddyParams> = {
           max: 1.5,
           step: 0.05,
           defaultValue: 0.35,
+        },
+        {
+          kind: 'checkbox',
+          key: 'showAddButton',
+          label: 'Show add button',
+          description:
+            'Lets viewers add a random character in a random costume colour.',
+          defaultValue: 1,
         },
       ],
     },

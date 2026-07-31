@@ -227,8 +227,15 @@ export default function App() {
           </button>
         </div>
 
-        {/* Full-scene handoff UI surface: add button only. */}
-        {!heroTextVisible ? (
+        {/*
+          Full-scene handoff UI surface: add button only.
+
+          It stays put through the hero preview and with the panel closed,
+          because it is part of the shipped composition rather than editor
+          chrome — the hero frame should show the affordance a visitor gets.
+          Its own toggle in Interaction is the way to retire it for a capture.
+        */}
+        {params.showAddButton > 0.5 ? (
           <div className="absolute bottom-5 left-5 z-20">
             <button
               type="button"

@@ -37,6 +37,8 @@ export type VirtualBuddyParams = {
   /** Multiplier on base rim light intensity (1 = authored default). */
   rimLightStrength: number
   showPhysicsBodies: number
+  /** Stage add-buddy button. Off gives a clean frame for capture. */
+  showAddButton: number
 
   // Filters — shared
   /** 0 Off, 1 Game Boy, 2 Cartoon, 3 PS1 */
