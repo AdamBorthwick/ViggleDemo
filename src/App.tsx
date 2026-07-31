@@ -23,7 +23,6 @@ const SPAWNABLE_MODELS = MODELS.map((model, index) => ({ model, index })).filter
 
 /** Stage add-button modes (`showAddButton` select indices). */
 const ADD_BUTTON_NONE = 0
-const ADD_BUTTON_FIXED = 1
 const ADD_BUTTON_FOCUSED = 2
 
 /** Intro pop delay + duration — after this, Focused mode docks off-frame. */
